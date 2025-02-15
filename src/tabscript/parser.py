@@ -18,46 +18,69 @@ class Parser:
         if self.debug_mode:
             print(*args, **kwargs)
 
+    def _preprocess_text(self, text: str) -> str:
+        """コメントと空行を除去する前処理"""
+        self.debug_print("\n=== _preprocess_text ===")
+        processed_lines = []
+        in_multiline_comment = False
+        
+        for line in text.split('\n'):
+            line = line.strip()
+            self.debug_print(f"Processing line: '{line}'")
+            
+            # 空行をスキップ
+            if not line:
+                self.debug_print("Skipping empty line")
+                continue
+            
+            # 複数行コメントの処理
+            if in_multiline_comment:
+                self.debug_print("In multiline comment")
+                if line.endswith("'''") or line.endswith('"""'):
+                    self.debug_print("Found multiline comment end")
+                    in_multiline_comment = False
+                continue
+            
+            # 複数行コメントの開始
+            if line.startswith("'''") or line.startswith('"""'):
+                self.debug_print("Found multiline comment start")
+                in_multiline_comment = True
+                continue
+            
+            # 行頭#のコメントをスキップ（行頭のみ）
+            if line.lstrip().startswith('#'):
+                self.debug_print("Skipping line starting with #")
+                continue
+            
+            # 有効な行を追加
+            self.debug_print(f"Adding line: '{line}'")
+            processed_lines.append(line)
+        
+        result = '\n'.join(processed_lines)
+        self.debug_print(f"\nFinal result:\n{result}")
+        return result
+
     def parse(self, source: str) -> Score:
         """Parse a TabScript file or string and return a Score object"""
+        # 入力を文字列として取得
+        if '\n' in source:  # 文字列として直接パース
+            text = source
+        else:  # ファイルパスとして扱う
+            with open(source, 'r') as f:
+                text = f.read()
+        
+        # コメントの前処理
+        processed_text = self._preprocess_text(text)
+        
+        # 以降は既存の処理
         self.score = Score(title="", beat="4/4")
         self.current_section = None
         self.current_line = 0
         self.last_string = 1
         self.last_duration = "4"
-
-        if '\n' in source:  # 文字列として直接パース
-            lines = source.splitlines()
-        else:  # ファイルパスとして扱う
-            with open(source, 'r') as f:
-                lines = f.readlines()
-
-        self._parse_lines(lines)
         
-        # スコアの構造を詳細にダンプ
-        self.debug_print("\nDEBUG: Score structure:")
-        for section in self.score.sections:
-            self.debug_print(f"\nSection: {section.name}")
-            for i, column in enumerate(section.columns):
-                self.debug_print(f"  Column {i}: bars_per_line={column.bars_per_line}, {len(column.bars)} bars")
-                for j, bar in enumerate(column.bars):
-                    self.debug_print(f"    Bar {j}: resolution={bar.resolution}, {len(bar.notes)} notes")
-                    for k, note in enumerate(bar.notes):
-                        chord_info = f", chord={note.chord}" if note.chord else ""
-                        step_info = f", step={note.step}"
-                        if note.is_chord:
-                            self.debug_print(f"      Note {k}: string={note.string}, fret={note.fret}, duration={note.duration}{step_info}, is_chord=True{chord_info}")
-                            for l, chord_note in enumerate(note.chord_notes):
-                                self.debug_print(f"        Chord note {l}: string={chord_note.string}, fret={chord_note.fret}")
-                        else:
-                            rest_info = ", is_rest=True" if note.is_rest else ""
-                            move_info = ""
-                            if note.is_up_move:
-                                move_info = ", up_move"
-                            elif note.is_down_move:
-                                move_info = ", down_move"
-                            self.debug_print(f"      Note {k}: string={note.string}, fret={note.fret}, duration={note.duration}{step_info}{chord_info}{rest_info}{move_info}")
-        
+        # 処理済みのテキストを行に分割してパース
+        self._parse_lines(processed_text.split('\n'))
         return self.score
 
     def _parse_lines(self, lines: List[str]):

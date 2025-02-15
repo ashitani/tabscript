@@ -77,11 +77,11 @@ parser.render_score("output.txt")
 開発への参加方法、テスト方法、コーディング規約などについては[docs/development.md](docs/development.md)を参照してください。
 
 ## Todo
-- スラー・タイ
+- スラー・タイ（ドキュメント書いたっけ？）
 - 繰り返し、DS、Coda
 - 三連符
 - 各種奏法（ハンマリング、プリング、スライド、チョーキング）
-- 長行コメント
+- コメント（できたけどまだ途中#の処理がおかしい）
 - 改ページ
 - VSCode plugin
 - HTML5+JS
