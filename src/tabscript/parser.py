@@ -92,7 +92,7 @@ class Parser:
             self.current_line += 1
             line = line.strip()
             
-            if not line or line.startswith('#'):  # 空行と行頭#のコメント行をスキップ
+            if not line:  # 空行のみスキップ（#のチェックを削除）
                 continue
             
             if line.startswith('['):
@@ -167,10 +167,7 @@ class Parser:
 
     def _parse_bar(self, line: str) -> Bar:
         """Parse a bar line"""
-        # コメントを除去
-        if '#' in line:
-            line = line.split('#')[0].strip()
-        
+        # コメントの除去を削除（前処理で行うため）
         bar = Bar()
         
         # 分解能を計算（その小節内の最小の音価で決定）
@@ -234,8 +231,9 @@ class Parser:
         tokens = []
         current_token = ""
         in_chord = False
+        in_chord_name = False  # コードネーム処理中かどうか
         skip_next = False
-        
+
         # トークン抽出のデバッグ
         self.debug_print("\nTokenizing:")
         i = 0
@@ -244,14 +242,27 @@ class Parser:
                 skip_next = False
                 i += 1
                 continue
-            
+
             char = notes_str[i]
-            
+
+            # 行末コメントの開始を検出したら、そこで処理を終了
+            # ただしコードネーム処理中は#を通常の文字として扱う
+            if char == '#' and not in_chord_name:
+                if current_token:  # 現在のトークンがあれば追加
+                    tokens.append(current_token.strip())
+                break  # 以降は全て無視
+
             if char == '@':
                 # コードトークンの開始
                 if current_token:
                     tokens.append(current_token.strip())
                 current_token = char
+                in_chord_name = True  # コードネーム処理開始
+            elif in_chord_name and char.isspace():
+                # コードネーム処理終了
+                tokens.append(current_token.strip())
+                current_token = ""
+                in_chord_name = False
             elif char == '(':
                 in_chord = True
                 current_token += char
@@ -266,18 +277,18 @@ class Parser:
                         current_token += notes_str[i]
                 tokens.append(current_token.strip())
                 current_token = ""
-            elif not in_chord and char.isspace():
+            elif not in_chord and not in_chord_name and char.isspace():
                 if current_token:
                     tokens.append(current_token.strip())
                     current_token = ""
             else:
                 current_token += char
             i += 1
-            self.debug_print(f"  char: '{notes_str[i-1]}', current_token: '{current_token}', in_chord: {in_chord}")
-        
+            self.debug_print(f"  char: '{notes_str[i-1]}', current_token: '{current_token}', in_chord: {in_chord}, in_chord_name: {in_chord_name}")
+
         if current_token:
             tokens.append(current_token.strip())
-        
+
         self.debug_print(f"\nExtracted tokens: {tokens}")
         
         # トークンをパース
