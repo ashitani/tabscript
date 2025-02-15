@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tabscript"
+version = "0.1.0"
+description = "A simple text-based guitar tablature format"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+dependencies = [
+    "reportlab>=3.6.8",
+]
+
+[project.scripts]
+tab2pdf = "tabscript.cli:main"
+tab2txt = "tabscript.cli:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+] 
