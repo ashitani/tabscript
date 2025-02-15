@@ -159,82 +159,80 @@ class Renderer:
     def render_text(self, output_path: str):
         """タブ譜をテキスト形式でレンダリング"""
         with open(output_path, 'w') as f:
-            # タイトルと設定を出力
-            f.write(f"Title: {self.score.title}\n")
-            f.write(f"Tuning: {self.score.tuning}\n")
-            f.write(f"Beat: {self.score.beat}\n\n")
+            # タイトルのみ出力（空でない場合）
+            if self.score.title:
+                f.write(f"{self.score.title}\n\n")
 
             # 各セクションを出力
             for section in self.score.sections:
-                f.write(f"[{section.name}]\n\n")
+                # セクション名が空でない場合のみ表示
+                if section.name:
+                    f.write(f"[{section.name}]\n\n")
                 
-                # 各小節を出力
-                for bar in section.bars:
-                    self._render_bar_text(f, bar)
-                    f.write("\n")  # 小節間に空行を挿入
+                # 各行（Column）を出力
+                for column in section.columns:
+                    self._render_column_text(f, column)
+                    f.write("\n")  # 行間に空行を挿入
                 
                 f.write("\n")  # セクション間に空行を挿入
 
-    def _render_bar_text(self, f, bar: Bar):
-        """小節をテキスト形式で出力"""
+    def _render_column_text(self, f, column):
+        """1行（複数の小節）をテキスト形式で出力"""
         string_count = self._get_string_count()
-        resolution = self._calculate_bar_resolution(bar)
-        bar_margin = 1  # 2から1に変更（1文字分の余白）
         
-        # 各弦の内容を構築
-        lines = ["" for _ in range(string_count + 1)]  # +1 for chord line
-        
-        # 余白を追加
-        for i in range(len(lines)):
-            lines[i] = "-" * bar_margin
-        
-        # 各音符をステップに変換して配置
-        for note in bar.notes:
-            steps = self._duration_to_steps(note.duration, resolution)
+        # 各小節の内容を構築
+        bar_contents = []
+        for bar_index, bar in enumerate(column.bars):
+            # コード行と弦の行を作成
+            lines = ["" for _ in range(string_count + 1)]  # +1 for chord line
             
-            # コード行の処理
-            if note.chord:
-                # コードの前後にパディングを追加
-                chord_str = note.chord.center(4 * steps)
-                lines[0] += chord_str
-            else:
-                # コードがない場合は空白を追加
-                lines[0] += " " * (4 * steps)
+            # 小節の開始を示す縦線（最初の小節のみ、コード行以外）
+            for i in range(1, len(lines)):  # コード行はスキップ
+                lines[i] = "|" if bar_index == 0 else ""
+            lines[0] = " "  # コード行は空白から開始
             
-            if note.is_rest:
-                # 休符の場合は全ての弦に空白を追加
-                for i in range(string_count):
-                    lines[i + 1] += "-" * (4 * steps)
-            else:
-                # 和音の場合は全ての構成音を同時に配置
-                if note.is_chord:
-                    # 主音を配置
-                    for string in range(string_count):
-                        if string + 1 == note.string:
-                            fret_str = "X " if note.is_muted else str(note.fret).rjust(2, '-')
-                            lines[string + 1] += f"--{fret_str}" + "-" * (4 * (steps - 1))
-                        else:
-                            lines[string + 1] += "-" * (4 * steps)
-                    # 和音の他の音を配置
-                    for chord_note in note.chord_notes:
-                        lines[chord_note.string] = (
-                            lines[chord_note.string][:-4*steps] +
-                            f"--{'X ' if chord_note.is_muted else str(chord_note.fret).rjust(2, '-')}" +
-                            "-" * (4 * (steps - 1))
-                        )
+            # 各音符を配置
+            current_pos = len(lines[0])  # 現在の水平位置を追跡
+            for note in bar.notes:
+                # コードがある場合は表示
+                if note.chord:
+                    # 必要なら空白を追加してコードを配置
+                    while len(lines[0]) < current_pos:
+                        lines[0] += " "
+                    lines[0] += f" {note.chord} "
+                
+                # 音符の処理
+                if note.is_rest:
+                    # 休符の場合は全ての弦に-を追加
+                    for i in range(1, len(lines)):  # コード行はスキップ
+                        lines[i] += "-" * 4
                 else:
-                    # 通常の音符の場合
-                    for string in range(string_count):
-                        if string + 1 == note.string:
-                            fret_str = "X " if note.is_muted else str(note.fret).rjust(2, '-')
-                            lines[string + 1] += f"--{fret_str}" + "-" * (4 * (steps - 1))
+                    # 通常の音符
+                    for i in range(1, len(lines)):  # コード行はスキップ
+                        if i == note.string:  # 弦番号をそのまま使用（1弦が一番上）
+                            fret_str = str(note.fret)
+                            lines[i] += f"-{fret_str}--"
                         else:
-                            lines[string + 1] += "-" * (4 * steps)
+                            lines[i] += "----"
+                
+                current_pos = len(lines[1])  # 音符の後の位置を更新
+            
+            # コード行の長さを他の行に合わせる
+            while len(lines[0]) < len(lines[1]):
+                lines[0] += " "
+            
+            # 小節の終了を示す縦線（コード行以外）
+            for i in range(1, len(lines)):  # コード行はスキップ
+                lines[i] += "|"
+            lines[0] += " "  # コード行は空白で終了
+            
+            bar_contents.append(lines)
         
-        # 各弦の内容を小節線で囲んで出力
-        f.write(f"|{lines[0]}|\n")  # コード行
-        for line in lines[1:]:
-            f.write(f"|{line}|\n")
+        # 全ての小節を横に並べて出力
+        for string in range(len(bar_contents[0])):
+            for bar_lines in bar_contents:
+                f.write(bar_lines[string])
+            f.write("\n")
 
     def _parse_duration(self, duration: str) -> Tuple[int, bool]:
         """音価文字列を解析して、基本の音価と付点の有無を返す"""

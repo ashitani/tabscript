@@ -12,9 +12,22 @@ TabScriptは、ギターやベースのタブ譜を記述するためのシン�
 ```
 5-1 4-2 3-3 2-4
 ```
-という文字列を下記のようなタブ譜に変換することができます。
+という文字列を下記のようなpdfか、
 
 ![images/hello_world.png](images/hello_world.png)
+
+あるいは下記のようなテキストに変換することができます。
+                  
+```
+|----------------|
+|-------------4--|
+|---------3------|
+|-----2----------|
+|-1--------------|
+|----------------|
+```
+
+TabScript言語の記法の詳細については[docs/format.md](docs/format.md)を参照してください。
 
 ## インストール
 
@@ -37,8 +50,9 @@ pip install .
 tab2pdf score.tab
 tab2pdf tabs/*.tab   # 複数ファイルの一括処理
 
-# テキストとして出力
+# テキストとして出力（タブ譜形式）
 tab2txt score.tab
+tab2txt tabs/*.tab   # 複数ファイルの一括処理
 ```
 
 ### Pythonコードでの使用
@@ -52,11 +66,11 @@ parser.parse("path/to/your/score.tab")
 
 # PDFとして出力
 parser.render_score("output.pdf")
+
+# テキストとして出力
+parser.render_score("output.txt")
 ```
 
-## 記法の詳細
-
-TabScript言語の記法の詳細については[docs/format.md](docs/format.md)を参照してください。
 
 ## 開発者向け情報
 
