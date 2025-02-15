@@ -65,9 +65,17 @@ class Renderer:
                 y -= 8 * mm
             
             # 各行を描画
-            for column in section.columns:
-                self._render_bar_group_pdf(column.bars, column.bars_per_line, y)
-                y -= 22 * mm  # 20mmから22mmに変更
+            for i, column in enumerate(section.columns):
+                # 前の行の最後の小節の最後の音符が接続を持っているか確認
+                has_previous_connection = False
+                if i > 0 and len(section.columns[i-1].bars) > 0:
+                    last_bar = section.columns[i-1].bars[-1]
+                    if len(last_bar.notes) > 0 and last_bar.notes[-1].connect_next:
+                        has_previous_connection = True
+                
+                # 小節グループを描画（接続情報を渡す）
+                self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
+                y -= 22 * mm
             
             y -= self.section_spacing + 2 * mm  # セクション間の間隔を2mm広く
             
@@ -211,7 +219,10 @@ class Renderer:
                     for i in range(1, len(lines)):  # コード行はスキップ
                         if i == note.string:  # 弦番号をそのまま使用（1弦が一番上）
                             fret_str = str(note.fret)
-                            lines[i] += f"-{fret_str}--"
+                            if note.connect_next:
+                                lines[i] += f"-{fret_str}&-"  # スラーの場合は&を追加
+                            else:
+                                lines[i] += f"-{fret_str}--"
                         else:
                             lines[i] += "----"
                 
@@ -339,7 +350,7 @@ class Renderer:
         text_height = 10
         self.canvas.drawString(x + 1 * mm, y + 2 * mm, chord) 
 
-    def _render_bar_group_pdf(self, bars: List[Bar], bars_per_line: int, y: float):
+    def _render_bar_group_pdf(self, bars: List[Bar], bars_per_line: int, y: float, has_previous_connection: bool = False):
         """小節グループを描画"""
         self.debug_print("\n=== _render_bar_group_pdf ===")
         self.debug_print("Input bars:")
@@ -403,4 +414,97 @@ class Renderer:
             current_x += bar_width
         
         # 最後の縦線を描画
+        self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
+
+        # 行頭の音符の右半分スラー
+        if has_previous_connection and len(bars) > 0 and len(bars[0].notes) > 0:
+            first_note = bars[0].notes[0]
+            x1 = self.margin - 5 * mm  # 小節線より少し左から
+            x2 = self.margin + bar_margin + 1.5 * mm
+            self._draw_half_slur(x1, first_note, x2, y_positions, "right")
+        
+        # スラー/タイの描画
+        for bar_index, bar in enumerate(bars):
+            bar_x = self.margin + (bar_index * bar_width)
+            usable_width = bar_width - (2 * bar_margin)
+            total_steps = sum(note.step for note in bar.notes)
+            step_width = usable_width / total_steps
+            
+            # 音符の位置を計算
+            note_x = bar_x + bar_margin
+            for i, note in enumerate(bar.notes):
+                if note.connect_next:
+                    # 小節内の接続
+                    if i < len(bar.notes) - 1:
+                        next_note = bar.notes[i + 1]
+                        x2 = note_x + (note.step * step_width) + (step_width / 2) - 1 * mm
+                        self._draw_slur(note_x, note, next_note, x2, y_positions)
+                    # 小節をまたぐ接続
+                    elif bar_index < len(bars) - 1:
+                        if len(bars[bar_index + 1].notes) > 0:
+                            next_note = bars[bar_index + 1].notes[0]
+                            next_bar_x = bar_x + bar_width
+                            x2 = next_bar_x + bar_margin + 1.5 * mm
+                            self._draw_slur(note_x, note, next_note, x2, y_positions)
+                    elif bar_index == len(bars) - 1:  # 行末の場合
+                        # 左半分のスラーのみ描画
+                        x2 = bar_x + bar_width + 2 * mm
+                        self._draw_half_slur(note_x, note, x2, y_positions, "left")
+                
+                note_x += note.step * step_width
+        
+        # 最後の縦線を描画
         self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1]) 
+
+    def _draw_slur(self, note_x, note, next_note, x2, y_positions):
+        """通常のスラーを描画"""
+        x1 = note_x + 1.5 * mm
+        y1 = y_positions[note.string - 1] - 2 * mm
+        y2 = y_positions[next_note.string - 1] - 2 * mm
+        
+        # 2本の曲線で描画（より自然な見た目に）
+        # 1本目（上側）
+        control_y1 = y1 - 3.2 * mm
+        control_y2 = y2 - 3.2 * mm
+        self.canvas.bezier(x1, y1,
+                          x1 + (x2 - x1) * 0.25, control_y1,
+                          x1 + (x2 - x1) * 0.75, control_y2,
+                          x2, y2)
+        
+        # 2本目（下側）
+        control_y1 = y1 - 2.8 * mm
+        control_y2 = y2 - 2.8 * mm
+        self.canvas.bezier(x1, y1,
+                          x1 + (x2 - x1) * 0.25, control_y1,
+                          x1 + (x2 - x1) * 0.75, control_y2,
+                          x2, y2)
+
+    def _draw_half_slur(self, note_x, note, x2, y_positions, half: str):
+        """スラーの左半分または右半分を描画"""
+        x1 = note_x + 1.5 * mm
+        y = y_positions[note.string - 1] - 2.0 * mm
+        
+        if half == "left":
+            # 左半分：始点から中央へ（2本の曲線）
+            control_y = y - 3.2 * mm
+            self.canvas.bezier(x1, y,
+                              x1 + (x2 - x1) * 0.25, control_y,
+                              x1 + (x2 - x1) * 0.5, control_y,
+                              x2, control_y)
+            control_y = y - 2.8 * mm
+            self.canvas.bezier(x1, y,
+                              x1 + (x2 - x1) * 0.25, control_y,
+                              x1 + (x2 - x1) * 0.5, control_y,
+                              x2, control_y)
+        else:
+            # 右半分：中央から終点へ（2本の曲線）
+            control_y = y - 4.3 * mm
+            self.canvas.bezier(x1, control_y,
+                              x2 - (x2 - x1) * 0.5, control_y,
+                              x2 - (x2 - x1) * 0.25, y,
+                              x2, y)
+            control_y = y - 3.7 * mm
+            self.canvas.bezier(x1, control_y,
+                              x2 - (x2 - x1) * 0.5, control_y,
+                              x2 - (x2 - x1) * 0.25, y,
+                              x2, y) 

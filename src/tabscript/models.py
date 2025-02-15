@@ -14,6 +14,7 @@ class Note:
     chord_notes: List['Note'] = None
     is_muted: bool = False
     step: int = 0  # resolution単位での長さ
+    connect_next: bool = False  # スラー/タイ用のフラグ
 
     def __post_init__(self):
         if self.chord_notes is None:

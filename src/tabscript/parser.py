@@ -157,6 +157,9 @@ class Parser:
                 continue
             if ':' in token:
                 duration_str = token.split(':')[1]
+                # スラー記号を除去してから処理
+                if duration_str.endswith('&'):
+                    duration_str = duration_str[:-1]
                 try:
                     base = self.safe_int(duration_str.rstrip('.'), "_parse_bar/duration")
                     # 不正な音価をチェック
@@ -278,11 +281,16 @@ class Parser:
 
     def _parse_note(self, token: str) -> Note:
         """Parse a single note token"""
+        # スラー/タイの処理
+        has_slur = token.endswith('&')
+        if has_slur:
+            token = token[:-1]  # &を除去
+        
         self.debug_print(f"\nParsing note token: {token}")
         self.debug_print(f"Current last_duration: {self.last_duration}")
         
         # 和音の場合
-        if token.startswith('(') and ':' in token:
+        if token.startswith('('):
             self.debug_print(f"Detected chord token")
             # まず括弧を除去してから:で分割
             content = token[1:]  # 先頭の(を除去
@@ -306,6 +314,7 @@ class Parser:
             main_note = self._parse_single_note(note_tokens[0])
             main_note.is_chord = True
             main_note.duration = duration
+            main_note.connect_next = has_slur
             
             # 残りの音符を和音の構成音として追加
             for note_token in note_tokens[1:]:
@@ -319,6 +328,7 @@ class Parser:
         # 通常の音符の場合
         self.debug_print(f"Parsing as single note")
         note = self._parse_single_note(token)
+        note.connect_next = has_slur
         
         # 次の音符のためにデフォルト値を更新
         if not note.is_rest:

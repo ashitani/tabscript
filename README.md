@@ -32,8 +32,8 @@ TabScript言語の記法の詳細については[docs/format.md](docs/format.md)
 ## インストール
 
 ```bash
-# PyPIからインストール
-pip install tabscript
+# PyPIからインストール (未実装)
+# pip install tabscript
 
 # ソースからインストール
 git clone https://github.com/ashtiani/tabscript.git
@@ -80,6 +80,8 @@ parser.render_score("output.txt")
 - スラー・タイ
 - 繰り返し、DS、Coda
 - 三連符
+- 各種奏法（ハンマリング、プリング、スライド、チョーキング）
+- 長行コメント
 - 改ページ
 - VSCode plugin
 - HTML5+JS
