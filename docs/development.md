@@ -4,7 +4,7 @@
 
 ```bash
 # リポジトリのクローン
-git clone https://github.com/yourusername/tabscript.git
+git clone https://github.com/ashitani/tabscript.git
 cd tabscript
 
 # 仮想環境の作成と有効化（推奨）

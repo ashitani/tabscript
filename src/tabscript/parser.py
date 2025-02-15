@@ -95,8 +95,10 @@ class Parser:
                     bars_per_line = int(value)
                 continue
             
+            # セクションがない場合は自動的にデフォルトセクションを作成
             if not self.current_section:
-                raise ParseError("Bar must be inside a section", self.current_line)
+                self.current_section = Section(name="")  # 空の名前でセクションを作成
+                self.score.sections.append(self.current_section)
             
             # 小節をパース
             bar = self._parse_bar(line)

@@ -29,12 +29,6 @@ def test_invalid_metadata():
         p.parse("tests/data/invalid_metadata.tab")
     assert "Invalid metadata format" in str(exc_info.value)
 
-def test_missing_section():
-    p = parser()
-    with pytest.raises(ParseError) as exc_info:
-        p.parse("tests/data/missing_section.tab")
-    assert "Bar must be inside a section" in str(exc_info.value)
-
 def test_parse_basic_structure():
     """基本的な構造のパースをテスト"""
     p = Parser()
@@ -59,3 +53,17 @@ def test_parse_basic_structure():
     assert bar.notes[0].fret == "3"
     assert bar.notes[0].duration == "4"
     assert bar.notes[0].chord == "Cmaj7" 
+
+def test_no_section_name():
+    """セクション名なしでも動作することをテスト"""
+    parser = Parser()
+    score = parser.parse("""
+    3-3:4 4-4 5-5
+    """)
+    
+    assert len(score.sections) == 1
+    assert score.sections[0].name == ""
+    assert len(score.sections[0].columns) == 1
+    assert len(score.sections[0].columns[0].bars) == 1
+    assert len(score.sections[0].columns[0].bars[0].notes) == 3
+    

@@ -1,10 +1,20 @@
 # TabScript
 
-[![Tests](https://github.com/ashitani/tabscript/actions/workflows/tests.yml/badge.svg)](https://github.com/yourusername/tabscript/actions/workflows/tests.yml)
+[![Tests](https://github.com/ashitani/tabscript/actions/workflows/tests.yml/badge.svg)](https://github.com/ashitani/tabscript/actions/workflows/tests.yml)
+![Python Versions](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)
 
 TabScriptは、ギターやベースのタブ譜を記述するためのシンプルなテキスト形式の言語です。
 
 このレポジトリはTabscript言語の仕様と、処理系としてtabscriptという名称のPythonパッケージを提供します。
+
+## TabScriptサンプル
+
+```
+5-1 4-2 3-3 2-4
+```
+という文字列を下記のようなタブ譜に変換することができます。
+
+![images/hello_world.png](images/hello_world.png)
 
 ## インストール
 
@@ -58,6 +68,7 @@ TabScript言語の記法の詳細については[docs/format.md](docs/format.md)
 - 三連符
 - 改ページ
 - VSCode plugin
+- HTML5+JS
 
 ## ライセンス
 

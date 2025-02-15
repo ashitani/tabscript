@@ -58,10 +58,11 @@ class Renderer:
         for section in self.score.sections:
             self.debug_print(f"Processing section: {section.name}")
             
-            # セクション名を描画
-            self.canvas.setFont("Helvetica-Bold", 12)
-            self.canvas.drawString(self.margin, y, f"[{section.name}]")
-            y -= 8 * mm
+            # セクション名を描画（空のセクション名の場合はスキップ）
+            if section.name:
+                self.canvas.setFont("Helvetica-Bold", 12)
+                self.canvas.drawString(self.margin, y, f"[{section.name}]")
+                y -= 8 * mm
             
             # 各行を描画
             for column in section.columns:
