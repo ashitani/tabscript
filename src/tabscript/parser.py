@@ -142,6 +142,10 @@ class Parser:
 
     def _parse_bar(self, line: str) -> Bar:
         """Parse a bar line"""
+        # コメントを除去
+        if '#' in line:
+            line = line.split('#')[0].strip()
+        
         bar = Bar()
         
         # 分解能を計算（その小節内の最小の音価で決定）
