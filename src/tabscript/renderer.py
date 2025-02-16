@@ -357,6 +357,11 @@ class Renderer:
             x = self.margin + (i * bar_width)
             self.debug_print(f"\nDrawing bar {i} at x={x}, y={y}")
             
+            # 繰り返し開始記号を描画
+            if bar.is_repeat_start:
+                self._draw_repeat_start(x, y)
+                self.debug_print("Drew repeat start")
+            
             # コードネームを描画（存在する場合）
             if bar.chord:
                 self.canvas.setFont("Helvetica", 10)
@@ -365,6 +370,11 @@ class Renderer:
             
             # 小節線を描画
             self.canvas.line(x, y, x, y - 15 * mm)
+            
+            # n番カッコを描画（存在する場合）
+            if bar.volta_number:
+                self._draw_volta(x, y, bar_width, bar.volta_number)
+                self.debug_print(f"Drew volta number: {bar.volta_number}")
             
             # 弦を描画
             for string in range(6):
@@ -394,6 +404,12 @@ class Renderer:
             # 最後の小節線
             x = self.margin + ((i + 1) * bar_width)
             self.canvas.line(x, y, x, y - 15 * mm)
+            
+            # 繰り返し終了記号を描画
+            if bar.is_repeat_end:
+                x_end = x + bar_width
+                self._draw_repeat_end(x_end, y)
+                self.debug_print("Drew repeat end")
 
     def _draw_slur(self, note_x, note, next_note, x2, y_positions):
         """通常のスラーを描画"""
@@ -496,3 +512,42 @@ class Renderer:
             current_y += 200  # 次のセクションまでの間隔
         
         return layout 
+
+    def _draw_repeat_start(self, x: float, y: float):
+        """繰り返し開始記号を描画"""
+        # 太い縦線
+        self.canvas.setLineWidth(1.5)
+        self.canvas.line(x, y, x, y - 15 * mm)
+        
+        # ドット
+        dot_x = x + 2 * mm
+        self.canvas.circle(dot_x, y - 5 * mm, 0.5 * mm, stroke=1, fill=1)
+        self.canvas.circle(dot_x, y - 10 * mm, 0.5 * mm, stroke=1, fill=1)
+        
+        # 線の太さを元に戻す
+        self.canvas.setLineWidth(1)
+
+    def _draw_repeat_end(self, x: float, y: float):
+        """繰り返し終了記号を描画"""
+        # 太い縦線
+        self.canvas.setLineWidth(1.5)
+        self.canvas.line(x, y, x, y - 15 * mm)
+        
+        # ドット
+        dot_x = x - 2 * mm
+        self.canvas.circle(dot_x, y - 5 * mm, 0.5 * mm, stroke=1, fill=1)
+        self.canvas.circle(dot_x, y - 10 * mm, 0.5 * mm, stroke=1, fill=1)
+        
+        # 線の太さを元に戻す
+        self.canvas.setLineWidth(1)
+
+    def _draw_volta(self, x: float, y: float, width: float, number: int):
+        """n番カッコを描画"""
+        # カッコの上部
+        bracket_y = y + 6 * mm
+        self.canvas.line(x, bracket_y, x, bracket_y + 3 * mm)
+        self.canvas.line(x, bracket_y + 3 * mm, x + width, bracket_y + 3 * mm)
+        
+        # 番号を描画
+        self.canvas.setFont("Helvetica", 8)
+        self.canvas.drawString(x + 2 * mm, bracket_y + 1 * mm, str(number)) 
