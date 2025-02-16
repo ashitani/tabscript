@@ -11,6 +11,7 @@ class Note:
     is_up_move: bool = False
     is_down_move: bool = False
     is_chord: bool = False
+    is_chord_start: bool = False  # 追加
     chord_notes: List['Note'] = None
     is_muted: bool = False
     step: int = 0  # resolution単位での長さ
@@ -26,13 +27,17 @@ class Note:
 
 @dataclass
 class Bar:
-    notes: List[Note] = None  # notesをオプショナルに変更
+    notes: List[Note] = None
     chord: Optional[str] = None
-    resolution: int = 16  # デフォルトは16分音符単位
+    resolution: int = 16
+    # 繰り返し関連のフィールドを追加
+    is_repeat_start: bool = False
+    is_repeat_end: bool = False
+    volta_number: Optional[int] = None
 
     def __post_init__(self):
         if self.notes is None:
-            self.notes = []  # 初期化時に空のリストを作成
+            self.notes = []
 
 @dataclass
 class Column:

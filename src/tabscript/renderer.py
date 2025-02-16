@@ -8,12 +8,12 @@ from .exceptions import TabScriptError
 from typing import List, Tuple
 
 class Renderer:
-    def __init__(self, score: Score):
+    def __init__(self, score: Score, debug_mode: bool = False):
         self.score = score
         self.canvas = None
         self.current_x = 0
         self.current_y = 0
-        self.debug_mode = False
+        self.debug_mode = debug_mode
         
         self.debug_print(f"__init__: score object id = {id(self.score)}")
         
@@ -40,23 +40,19 @@ class Renderer:
 
     def render_pdf(self, output_path: str, debug: bool = False):
         """タブ譜をPDFとしてレンダリング"""
-        self.debug_mode = debug
-        
-        self.debug_print(f"render_pdf start: score object id = {id(self.score)}")
+        self.debug_print("\n=== render_pdf ===")
+        self.debug_print(f"Output path: {output_path}")
         
         # A4縦向きでキャンバスを作成
         self.canvas = canvas.Canvas(output_path, pagesize=A4)
         
         # タイトルと設定を出力
         y = self.page_height - self.margin - 5 * mm
-        self.draw_title(y)
-        y -= 5 * mm
-        self.draw_metadata(y)
-        y -= 5 * mm
+        self.debug_print(f"Initial y position: {y}")
         
         # セクションごとに描画
-        for section in self.score.sections:
-            self.debug_print(f"Processing section: {section.name}")
+        for section_index, section in enumerate(self.score.sections):
+            self.debug_print(f"\nProcessing section {section_index}: {section.name}")
             
             # セクション名を描画（空のセクション名の場合はスキップ）
             if section.name:
@@ -65,26 +61,23 @@ class Renderer:
                 y -= 8 * mm
             
             # 各行を描画
-            for i, column in enumerate(section.columns):
-                # 前の行の最後の小節の最後の音符が接続を持っているか確認
-                has_previous_connection = False
-                if i > 0 and len(section.columns[i-1].bars) > 0:
-                    last_bar = section.columns[i-1].bars[-1]
-                    if len(last_bar.notes) > 0 and last_bar.notes[-1].connect_next:
-                        has_previous_connection = True
+            for column_index, column in enumerate(section.columns):
+                self.debug_print(f"\nProcessing column {column_index}")
+                self.debug_print(f"Number of bars: {len(column.bars)}")
                 
-                # 小節グループを描画（接続情報を渡す）
-                self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
-                y -= 22 * mm
+                # 小節グループを描画
+                self._render_bar_group_pdf(column.bars, column.bars_per_line, y)
+                y -= 22 * mm  # 行間隔
+                
+                # 新しいページが必要かチェック
+                if y < self.margin_bottom:
+                    self.canvas.showPage()
+                    y = self.page_height - self.margin - 5 * mm
             
-            y -= self.section_spacing + 2 * mm  # セクション間の間隔を2mm広く
-            
-            # 新しいページが必要かチェック
-            if y < self.margin_bottom:
-                self.canvas.showPage()
-                y = self.page_height - self.margin - 5 * mm
+            y -= self.section_spacing  # セクション間の間隔
         
         self.canvas.save()
+        self.debug_print("\nPDF generation completed")
 
     def draw_title(self, y: float):
         """タイトルを描画（センタリング）"""
@@ -350,111 +343,57 @@ class Renderer:
         text_height = 10
         self.canvas.drawString(x + 1 * mm, y + 2 * mm, chord) 
 
-    def _render_bar_group_pdf(self, bars: List[Bar], bars_per_line: int, y: float, has_previous_connection: bool = False):
-        """小節グループを描画"""
+    def _render_bar_group_pdf(self, bars: List[Bar], bars_per_line: int, y: float):
+        """小節グループをPDFに描画"""
         self.debug_print("\n=== _render_bar_group_pdf ===")
-        self.debug_print("Input bars:")
+        
+        # 小節の幅を計算
+        bar_width = (self.usable_width - self.margin) / bars_per_line
+        bar_margin = 2 * mm  # 小節の前後のマージン
+        self.debug_print(f"Bar width: {bar_width}")
+        
+        # 各小節を描画
         for i, bar in enumerate(bars):
-            self.debug_print(f"\nBar {i}:")
-            self.debug_print(f"  Resolution: {bar.resolution}")
-            for j, note in enumerate(bar.notes):
-                self.debug_print(f"  Note {j}:")
-                self.debug_print(f"    string: {note.string}")
-                self.debug_print(f"    fret: {note.fret}")
-                self.debug_print(f"    duration: {note.duration}")
-                self.debug_print(f"    step: {note.step}")  # パース時に計算済み！
-
-        string_count = self._get_string_count()
-        bar_margin = 1.5 * mm  # 小節の前後のマージン
-        
-        # 小節グループの幅を計算
-        if bars_per_line == 1:
-            group_width = self.usable_width
-            bar_width = group_width
-        else:
-            group_width = self.usable_width / bars_per_line * len(bars)
-            bar_width = group_width / len(bars)
-        
-        # 各弦の位置を計算（current_yの代わりにyを使用）
-        y_positions = [y - (i * self.string_spacing) for i in range(string_count)]
-        
-        # 小節を順に描画
-        current_x = self.margin
-        for bar_index, bar in enumerate(bars):
-            # 小節内の総ステップ数を計算（パース時の値を使用）
+            x = self.margin + (i * bar_width)
+            self.debug_print(f"\nDrawing bar {i} at x={x}, y={y}")
+            
+            # コードネームを描画（存在する場合）
+            if bar.chord:
+                self.canvas.setFont("Helvetica", 10)
+                self.canvas.drawString(x, y + 3 * mm, bar.chord)
+                self.debug_print(f"Drew chord: {bar.chord}")
+            
+            # 小節線を描画
+            self.canvas.line(x, y, x, y - 15 * mm)
+            
+            # 弦を描画
+            for string in range(6):
+                string_y = y - (string * self.string_spacing)
+                self.canvas.line(x, string_y, x + bar_width, string_y)
+            
+            # 小節内の総ステップ数を計算
             total_steps = sum(note.step for note in bar.notes)
-            self.debug_print(f"  total_steps: {total_steps}")
+            self.debug_print(f"Total steps in bar: {total_steps}")
             
-            # このステップ幅で描画（前後の余白を考慮）
-            usable_width = bar_width - (2 * bar_margin)  # 前後のマージンを引く
-            step_width = usable_width / total_steps
-            
-            # 縦線と横線を描画
-            self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
-            for y in y_positions:
-                self.canvas.line(current_x, y, current_x + bar_width, y)
-            
-            # 音符を配置（開始マージンから開始）
-            note_x = current_x + bar_margin
-            for note in bar.notes:
-                # パース時に計算済みのステップ数を使用
-                note_width = note.step * step_width
-                
-                # コードを描画
-                if note.chord:
-                    self._draw_chord(note_x, y_positions[0], note.chord)
-                
-                # 音符を描画
-                if not note.is_rest:
-                    y = y_positions[note.string - 1]
-                    self._draw_fret_number(note_x, y, note.fret)
-                
-                note_x += note_width
-            
-            current_x += bar_width
-        
-        # 最後の縦線を描画
-        self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
-
-        # 行頭の音符の右半分スラー
-        if has_previous_connection and len(bars) > 0 and len(bars[0].notes) > 0:
-            first_note = bars[0].notes[0]
-            x1 = self.margin - 5 * mm  # 小節線より少し左から
-            x2 = self.margin + bar_margin + 1.5 * mm
-            self._draw_half_slur(x1, first_note, x2, y_positions, "right")
-        
-        # スラー/タイの描画
-        for bar_index, bar in enumerate(bars):
-            bar_x = self.margin + (bar_index * bar_width)
+            # 使用可能な幅を計算
             usable_width = bar_width - (2 * bar_margin)
-            total_steps = sum(note.step for note in bar.notes)
-            step_width = usable_width / total_steps
+            step_width = usable_width / total_steps if total_steps > 0 else 0
             
-            # 音符の位置を計算
-            note_x = bar_x + bar_margin
-            for i, note in enumerate(bar.notes):
-                if note.connect_next:
-                    # 小節内の接続
-                    if i < len(bar.notes) - 1:
-                        next_note = bar.notes[i + 1]
-                        x2 = note_x + (note.step * step_width) + (step_width / 2) - 1 * mm
-                        self._draw_slur(note_x, note, next_note, x2, y_positions)
-                    # 小節をまたぐ接続
-                    elif bar_index < len(bars) - 1:
-                        if len(bars[bar_index + 1].notes) > 0:
-                            next_note = bars[bar_index + 1].notes[0]
-                            next_bar_x = bar_x + bar_width
-                            x2 = next_bar_x + bar_margin + 1.5 * mm
-                            self._draw_slur(note_x, note, next_note, x2, y_positions)
-                    elif bar_index == len(bars) - 1:  # 行末の場合
-                        # 左半分のスラーのみ描画
-                        x2 = bar_x + bar_width + 2 * mm
-                        self._draw_half_slur(note_x, note, x2, y_positions, "left")
-                
-                note_x += note.step * step_width
-        
-        # 最後の縦線を描画
-        self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1]) 
+            # 音符を描画
+            current_step = 0
+            for note in bar.notes:
+                if not note.is_rest:
+                    # 音符のX座標を計算（ステップ数に基づく）
+                    note_x = x + bar_margin + (current_step * step_width)
+                    note_y = y - ((note.string - 1) * self.string_spacing)
+                    self.canvas.setFont("Helvetica", 8)
+                    self.canvas.drawString(note_x, note_y - 2, str(note.fret))
+                    self.debug_print(f"Drew note: string={note.string}, fret={note.fret} at x={note_x}")
+                current_step += note.step
+            
+            # 最後の小節線
+            x = self.margin + ((i + 1) * bar_width)
+            self.canvas.line(x, y, x, y - 15 * mm)
 
     def _draw_slur(self, note_x, note, next_note, x2, y_positions):
         """通常のスラーを描画"""
@@ -508,3 +447,52 @@ class Renderer:
                               x2 - (x2 - x1) * 0.5, control_y,
                               x2 - (x2 - x1) * 0.25, y,
                               x2, y) 
+
+    def _calculate_layout(self) -> dict:
+        """スコアのレイアウトを計算"""
+        layout = {
+            'title': {
+                'x': 50,  # 左マージン
+                'y': 50,  # 上マージン
+                'font_size': 16
+            },
+            'sections': []
+        }
+        
+        current_y = 100  # タイトルの下から開始
+        
+        for section in self.score.sections:
+            section_layout = {
+                'name': section.name,
+                'y': current_y,
+                'columns': []
+            }
+            
+            current_x = 50  # 左マージンから開始
+            for column in section.columns:
+                column_layout = {
+                    'x': current_x,
+                    'y': current_y,
+                    'width': 200,  # 固定幅（後で調整可能に）
+                    'height': 150,  # 固定高さ（後で調整可能に）
+                    'bars': []
+                }
+                
+                # 各小節の位置を計算
+                bar_width = column_layout['width'] / len(column.bars)
+                for i, bar in enumerate(column.bars):
+                    bar_layout = {
+                        'x': current_x + (i * bar_width),
+                        'y': current_y,
+                        'width': bar_width,
+                        'height': column_layout['height']
+                    }
+                    column_layout['bars'].append(bar_layout)
+                
+                section_layout['columns'].append(column_layout)
+                current_x += column_layout['width'] + 20  # 20pxの間隔
+            
+            layout['sections'].append(section_layout)
+            current_y += 200  # 次のセクションまでの間隔
+        
+        return layout 

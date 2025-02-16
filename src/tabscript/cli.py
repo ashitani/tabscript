@@ -20,38 +20,36 @@ def parse_args():
 
 def main():
     """コマンドラインインターフェース"""
-    if len(sys.argv) < 2:
-        print("Usage: tab2pdf input.tab [input2.tab ...]")
-        print("       tab2txt input.tab [input2.tab ...]")
-        sys.exit(1)
+    # 引数のパース
+    parser = argparse.ArgumentParser(description='Convert TabScript files to PDF or text')
+    parser.add_argument('files', nargs='+', help='Input TabScript files')
+    parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    args = parser.parse_args()
     
-    # コマンド名から出力形式を判断
+    # 出力形式の判断
     is_pdf = 'tab2pdf' in sys.argv[0]
     extension = '.pdf' if is_pdf else '.txt'
     
-    # 入力ファイルのパターンを展開
-    input_files = []
-    for pattern in sys.argv[1:]:
-        input_files.extend(glob.glob(pattern))
-    
-    if not input_files:
-        print("No input files found.")
-        sys.exit(1)
+    # パーサーの初期化
+    tab_parser = Parser()  # 変数名をtab_parserに変更（argparseと区別）
+    tab_parser.debug_mode = args.debug  # デバッグフラグを設定
     
     # 各ファイルを処理
-    parser = Parser()
-    for input_file in input_files:
+    for input_file in args.files:
         try:
             # 出力ファイル名を生成
             output_file = input_file.rsplit('.', 1)[0] + extension
             
             # パースして出力
-            score = parser.parse(input_file)
-            parser.render_score(output_file)
+            score = tab_parser.parse(input_file)  # tab_parserを使用
+            tab_parser.render_score(output_file)  # tab_parserを使用
             
             print(f"Generated {output_file}")
         except Exception as e:
             print(f"Error processing {input_file}: {str(e)}")
+            if args.debug:
+                import traceback
+                traceback.print_exc()
             continue
 
 if __name__ == "__main__":
