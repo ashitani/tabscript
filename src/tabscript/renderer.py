@@ -8,14 +8,18 @@ from .exceptions import TabScriptError
 from typing import List, Tuple
 
 class Renderer:
-    def __init__(self, score: Score):
+    def __init__(self, score: Score, debug_mode: bool = False):
+        """レンダラーを初期化
+        
+        Args:
+            score: 描画対象のスコア
+            debug_mode: デバッグモードフラグ
+        """
         self.score = score
         self.canvas = None
         self.current_x = 0
         self.current_y = 0
-        self.debug_mode = False
-        
-        self.debug_print(f"__init__: score object id = {id(self.score)}")
+        self.debug_mode = debug_mode
         
         # レイアウト設定
         self.margin = 5 * mm
@@ -29,6 +33,8 @@ class Renderer:
         self.page_height = A4[1]
         self.usable_width = self.page_width - (2 * self.margin)
         self.debug_print(f"usable_width = {self.usable_width}")
+        
+        self.debug_print(f"__init__: score object id = {id(self.score)}")
         
         # 小節の幅を計算は不要（各Columnが自身のbars_per_lineを持つため）
         self.debug_print(f"A4 size = {A4}")
