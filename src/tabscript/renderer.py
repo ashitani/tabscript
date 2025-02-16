@@ -551,3 +551,50 @@ class Renderer:
         # 番号を描画
         self.canvas.setFont("Helvetica", 8)
         self.canvas.drawString(x + 2 * mm, bracket_y + 1 * mm, str(number)) 
+
+    def _calculate_note_positions(self, bar: Bar, x_start: float, bar_width: float) -> List[Tuple[Note, float]]:
+        """小節内の音符のx座標を計算
+        
+        Args:
+            bar: 小節オブジェクト
+            x_start: 小節の開始x座標
+            bar_width: 小節の幅
+            
+        Returns:
+            List[Tuple[Note, float]]: (音符, x座標)のリスト
+        """
+        positions = []
+        total_steps = 0
+        last_x = x_start
+        
+        # 小節内の音符を順に処理
+        i = 0
+        while i < len(bar.notes):
+            note = bar.notes[i]
+            
+            if note.is_chord:
+                # 和音の場合は同じx座標を使用
+                chord_x = last_x
+                chord_steps = note.step
+                positions.append((note, chord_x))
+                
+                # 和音の残りの音符を処理
+                i += 1
+                while i < len(bar.notes) and bar.notes[i].is_chord:
+                    positions.append((bar.notes[i], chord_x))
+                    i += 1
+                
+                # 和音全体のステップ数を加算
+                total_steps += chord_steps
+                # 次の音符のx座標を計算
+                last_x = x_start + (total_steps / 16.0) * bar_width
+                
+            else:
+                # 通常の音符
+                positions.append((note, last_x))
+                total_steps += note.step
+                # 次の音符のx座標を計算
+                last_x = x_start + (total_steps / 16.0) * bar_width
+                i += 1
+        
+        return positions 

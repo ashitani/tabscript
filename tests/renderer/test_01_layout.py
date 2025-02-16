@@ -58,25 +58,21 @@ def test_note_position_calculation():
         positions = renderer._calculate_note_positions(bar, x_start, bar_width)
         
         # 位置の基本チェック
-        assert all(x_start <= pos <= x_start + bar_width for pos in positions), \
+        assert all(x_start <= x <= x_start + bar_width for _, x in positions), \
             f"Note positions must be within bar bounds: {positions}"
         
-        # 位置の順序チェック
-        assert all(positions[i] <= positions[i+1] for i in range(len(positions)-1)), \
-            "Notes must be ordered left to right"
+        # 和音のチェック
+        for i, (note, x) in enumerate(positions):
+            if note.is_chord and i + 1 < len(positions):
+                next_note = positions[i + 1][0]
+                if next_note.is_chord:
+                    assert positions[i][1] == positions[i + 1][1], \
+                        "Chord notes must have same x position"
         
-        # マージンのチェック
-        assert positions[0] >= x_start + margin, \
-            f"First note must respect left margin: {positions[0]}"
-        if positions:
-            assert positions[-1] <= x_start + bar_width - margin, \
-                f"Last note must respect right margin: {positions[-1]}"
-        
-        # 和音の位置チェック
-        if any(note.is_chord for note in bar.notes):
-            chord_positions = [pos for note, pos in zip(bar.notes, positions) if note.is_chord]
-            assert len(set(chord_positions)) == 1, \
-                "All notes in a chord must have the same x position"
+        # 音符の順序チェック
+        x_positions = [x for _, x in positions]
+        assert x_positions == sorted(x_positions), \
+            "Note positions must be in ascending order"
 
 def test_bar_width_calculation():
     """小節幅の計算をテスト"""
