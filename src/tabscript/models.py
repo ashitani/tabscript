@@ -73,4 +73,14 @@ class Score:
     @property
     def bars(self) -> List[Bar]:
         """全ての小節を返す"""
-        return [bar for section in self.sections for bar in section.bars] 
+        return [bar for section in self.sections for bar in section.bars]
+
+@dataclass
+class BarInfo:
+    """小節の構造情報"""
+    content: str
+    repeat_start: bool = False
+    repeat_end: bool = False
+    volta_number: Optional[int] = None
+    volta_start: bool = False  # n番カッコの開始
+    volta_end: bool = False    # n番カッコの終了 

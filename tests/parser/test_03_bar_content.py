@@ -222,3 +222,68 @@ def test_tie_slur_notation():
     assert bar.notes[1].connect_next
     assert bar.notes[2].connect_next
     assert not bar.notes[3].connect_next 
+
+def test_repeat_bar_parsing():
+    """繰り返し記号のパースをテスト"""
+    parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    
+    # 基本的な繰り返し
+    bar_info = parser._analyze_section_bars([
+        "{ 1-1:4 2-2:4 }"  # 一行形式
+    ])
+    
+    assert len(bar_info) == 1
+    assert bar_info[0].repeat_start == True
+    assert bar_info[0].repeat_end == True
+    assert bar_info[0].content == "1-1:4 2-2:4"
+
+def test_volta_bracket_parsing():
+    """n番カッコのパースをテスト"""
+    parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    
+    # n番カッコの基本的なパース
+    bar_info = parser._analyze_section_bars([
+        "{ 1-1:4 2-2:4 }",  # 繰り返し開始
+        "{1 3-3:4 4-4:4 }1",  # 1番カッコ
+        "{2 5-5:4 6-6:4 }2"   # 2番カッコ
+    ])
+    
+    assert len(bar_info) == 3
+    # 繰り返しの検証
+    assert bar_info[0].repeat_start == True
+    assert bar_info[0].repeat_end == True
+    # 1番カッコの検証
+    assert bar_info[1].volta_number == 1
+    assert bar_info[1].volta_start == True
+    assert bar_info[1].volta_end == True
+    # 2番カッコの検証
+    assert bar_info[2].volta_number == 2
+    assert bar_info[2].volta_start == True
+    assert bar_info[2].volta_end == True
+
+def test_multi_bar_volta_bracket_parsing():
+    """複数小節に渡るn番カッコのパースをテスト"""
+    parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    
+    # 複数小節のn番カッコ
+    bar_info = parser._analyze_section_bars([
+        "{ 1-1:4 2-2:4 }",  # 繰り返し開始
+        "{1 3-3:4 4-4:4 5-5:4 6-6:4 }1",  # 1番カッコ（2小節分）
+        "{2 7-7:4 8-8:4 9-9:4 10-10:4 }2"  # 2番カッコ（2小節分）
+    ])
+    
+    assert len(bar_info) == 3
+    # 繰り返しの検証
+    assert bar_info[0].repeat_start == True
+    assert bar_info[0].repeat_end == True
+    # 1番カッコの検証
+    assert bar_info[1].volta_number == 1
+    assert bar_info[1].volta_start == True
+    assert bar_info[1].volta_end == True
+    # 2番カッコの検証
+    assert bar_info[2].volta_number == 2
+    assert bar_info[2].volta_start == True
+    assert bar_info[2].volta_end == True 

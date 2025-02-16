@@ -12,6 +12,8 @@ class BarInfo:
     repeat_start: bool = False
     repeat_end: bool = False
     volta_number: Optional[int] = None
+    volta_start: bool = False
+    volta_end: bool = False
 
 @dataclass
 class SectionStructure:
@@ -85,25 +87,36 @@ class Parser:
         """TabScriptをパースしてScoreオブジェクトを返す"""
         self.debug_print("\n=== parse ===")
         self.debug_print(f"Parsing source: {source}")
-        
+
         # ファイルかテキストかを判断
         text = self._load_source(source)
         self.debug_print(f"\nLoaded text:\n{text}")
-        
-        # 1. 基本的なテキストクリーニング
-        cleaned_text = self._clean_text(text)
-        self.debug_print(f"\nCleaned text:\n{cleaned_text}")
-        
-        # 2. メタデータとセクション構造の抽出
-        structure = self._extract_structure(cleaned_text)
+
+        # 1. コメント除去フェーズ
+        text = self._remove_comments(text)
+        self.debug_print(f"\nAfter comment removal:\n{text}")
+
+        # 2. 空行正規化フェーズ
+        text = self._normalize_empty_lines(text)
+        self.debug_print(f"\nAfter empty line normalization:\n{text}")
+
+        # 3. 繰り返し記号の一行化フェーズ
+        text = self._normalize_repeat_brackets(text)
+        self.debug_print(f"\nAfter repeat bracket normalization:\n{text}")
+
+        # 4. n番カッコの一行化フェーズ
+        text = self._normalize_volta_brackets(text)
+        self.debug_print(f"\nAfter volta bracket normalization:\n{text}")
+
+        # 5. メタデータとセクション構造の抽出
+        structure = self._extract_structure(text)
         self.debug_print(f"\nExtracted structure:")
         self.debug_print(f"Metadata: {structure.metadata}")
         self.debug_print(f"Sections: {[s.name for s in structure.sections]}")
-        
-        # 3. 小節構造の解析（繰り返し記号など）
-        self.score = self._create_score(structure, cleaned_text)
-        self.debug_print(f"\nCreated score object id: {id(self.score)}")
-        
+
+        # 6. スコアの構築
+        self.score = self._create_score(structure, text)
+
         return self.score
     
     def _load_source(self, source: str) -> str:
@@ -730,99 +743,34 @@ class Parser:
             if not line:
                 continue
             
-            # 1行形式の繰り返し記号を処理
+            # 1行形式の繰り返し記号
             if line.startswith('{ ') and line.endswith(' }'):
                 content = line[2:-2].strip()
-                if not content:
-                    raise ParseError("Empty repeat bracket", self.current_line)
-                bars.append(BarInfo(
+                bar = BarInfo(
                     content=content,
                     repeat_start=True,
                     repeat_end=True
-                ))
+                )
+                bars.append(bar)
                 continue
             
-            # 1行形式のn番カッコを処理
-            match = re.match(r'{\s*(\d+)\s+([^}]+)\s+}(\1)', line)
+            # 1行形式のn番カッコ
+            match = re.match(r'{\s*(\d+)\s+([^}]+)\s+}\1', line)
             if match:
                 number = int(match.group(1))
                 content = match.group(2).strip()
-                bars.append(BarInfo(
+                bar = BarInfo(
                     content=content,
-                    volta_number=number
-                ))
-                continue
-            
-            # 繰り返し記号の開始
-            if line == '{':
-                if in_repeat:
-                    raise ParseError("Nested repeat brackets are not allowed", self.current_line)
-                in_repeat = True
-                continue
-            
-            # 繰り返し記号の終了
-            if line == '}':
-                if not in_repeat:
-                    raise ParseError("Unmatched closing bracket", self.current_line)
-                if not repeat_content:
-                    raise ParseError("Empty repeat bracket", self.current_line)
-                in_repeat = False
-                continue
-            
-            # n番カッコの開始
-            if line.startswith('{') and len(line) > 1:
-                try:
-                    number = int(line[1:])
-                    if in_volta:
-                        raise ParseError("Nested volta brackets are not allowed", self.current_line)
-                    current_volta_number = number
-                    in_volta = True
-                except ValueError:
-                    pass
-                continue
-            
-            # n番カッコの終了
-            if line.endswith('}') and len(line) > 1:
-                try:
-                    number = int(line[:-1])
-                    if not in_volta:
-                        raise ParseError("Unmatched closing volta bracket", self.current_line)
-                    if number != current_volta_number:
-                        raise ParseError("Mismatched volta bracket numbers", self.current_line)
-                    in_volta = False
-                    current_volta_number = None
-                except ValueError:
-                    pass
+                    volta_number=number,
+                    volta_start=True,
+                    volta_end=True
+                )
+                bars.append(bar)
                 continue
             
             # 通常の小節内容
             bar = BarInfo(content=line)
             bars.append(bar)
-            
-            # 小節の長さをチェックは、n番カッコの中でない場合のみ行う
-            if not in_volta:
-                parsed_bar = self._parse_bar_line(line)
-                # 和音の場合は最大のstepを使用
-                max_step = 0
-                current_step = 0
-                for note in parsed_bar.notes:
-                    if note.is_chord_start:  # 和音の開始
-                        current_step = 0
-                    current_step = max(current_step, note.step)
-                    if not note.is_chord:  # 和音でない場合は合計に加算
-                        max_step += current_step
-                        current_step = 0
-                if max_step > 16:  # 4/4拍子の場合
-                    raise ParseError("Bar duration exceeds time signature", self.current_line)
-            
-            if in_repeat:
-                repeat_content = True
-        
-        # 閉じていない括弧のチェック
-        if in_repeat:
-            raise ParseError("Unclosed repeat bracket", self.current_line)
-        if in_volta:
-            raise ParseError("Unclosed volta bracket", self.current_line)
         
         return bars
 
@@ -949,4 +897,151 @@ class Parser:
                 bar.notes.append(note)
             i += 1
         
+        # 小節の長さをチェック
+        total_steps = 0
+        i = 0
+        while i < len(bar.notes):
+            note = bar.notes[i]
+            if note.is_chord:
+                # 和音の場合は最初の音符のステップ数だけを加算
+                chord_steps = note.step
+                # 和音の残りの音符をスキップ
+                while i + 1 < len(bar.notes) and bar.notes[i + 1].is_chord:
+                    i += 1
+                total_steps += chord_steps
+            else:
+                # 通常の音符
+                total_steps += note.step
+            i += 1
+
+        # 拍子記号から期待されるステップ数を計算
+        beat = self.score.beat
+        numerator, denominator = map(int, beat.split('/'))
+        expected_steps = numerator * (16 // denominator)
+
+        self.debug_print(f"\n=== Bar duration check ===")
+        self.debug_print(f"Total steps: {total_steps}")
+        self.debug_print(f"Expected steps: {expected_steps}")
+
+        if total_steps > expected_steps:
+            raise ParseError("Bar duration exceeds time signature", self.current_line)
+
         return bar 
+
+    def _remove_comments(self, text: str) -> str:
+        """コメントを除去"""
+        lines = []
+        for line in text.splitlines():
+            # コメント行をスキップ
+            if line.strip().startswith('#'):
+                continue
+            # 行末コメントを除去
+            if '#' in line:
+                line = line[:line.index('#')].rstrip()
+            lines.append(line)
+        return '\n'.join(lines)
+
+    def _normalize_empty_lines(self, text: str) -> str:
+        """空行を正規化"""
+        lines = text.splitlines()
+        result = []
+        prev_empty = False
+        
+        for line in lines:
+            is_empty = not line.strip()
+            # セクション区切りの空行は2行に
+            if is_empty and not prev_empty:
+                result.append('')
+                result.append('')
+            # 通常の空行はスキップ
+            elif not is_empty:
+                result.append(line)
+            prev_empty = is_empty
+        
+        return '\n'.join(result)
+
+    def _normalize_repeat_brackets(self, text: str) -> str:
+        """繰り返し記号を一行形式に変換"""
+        lines = text.splitlines()
+        result = []
+        content = []
+        in_repeat = False
+        
+        for line in lines:
+            line = line.strip()
+            if line == '{':
+                if in_repeat:
+                    raise ParseError("Nested repeat brackets are not allowed", self.current_line)
+                in_repeat = True
+            elif line == '}' and in_repeat:
+                if not content:
+                    raise ParseError("Empty repeat bracket", self.current_line)
+                result.append(f"{{ {' '.join(content)} }}")
+                content = []
+                in_repeat = False
+            elif in_repeat and line:
+                content.append(line)
+            else:
+                result.append(line)
+        
+        # 閉じていない繰り返しがある場合はエラー
+        if in_repeat:
+            raise ParseError("Unclosed repeat bracket", self.current_line)
+        
+        return '\n'.join(result)
+
+    def _normalize_volta_brackets(self, text: str) -> str:
+        """n番カッコを一行形式に変換"""
+        lines = text.splitlines()
+        result = []
+        content = []
+        current_volta = None
+        
+        self.debug_print("\n=== _normalize_volta_brackets ===")
+        self.debug_print(f"Input text:\n{text}")
+        
+        for line in lines:
+            line = line.strip()
+            self.debug_print(f"Processing line: '{line}'")
+            
+            if line.startswith('{') and len(line) > 1:
+                try:
+                    # 入れ子のn番カッコをチェック
+                    if current_volta is not None:
+                        raise ParseError("Nested volta brackets are not allowed", self.current_line)
+                    current_volta = int(line[1:])
+                    content = []
+                    self.debug_print(f"Found volta start: {current_volta}")
+                except ValueError:
+                    # 通常の繰り返し記号の場合
+                    result.append(line)
+            elif line.endswith('}'):
+                try:
+                    number = int(line[:-1])
+                    if current_volta is None:
+                        # n番カッコの外での終了括弧
+                        result.append(line)
+                    elif number == current_volta:
+                        normalized = f"{{{current_volta} {' '.join(content)} }}{current_volta}"
+                        self.debug_print(f"Normalized volta: {normalized}")
+                        result.append(normalized)
+                        current_volta = None
+                    else:
+                        # 番号が一致しない場合はエラー
+                        raise ParseError("Mismatched volta bracket numbers", self.current_line)
+                except ValueError:
+                    # 通常の繰り返し記号の終了の場合
+                    result.append(line)
+            elif current_volta is not None and line:
+                content.append(line)
+                self.debug_print(f"Added content: {line}")
+            else:
+                result.append(line)
+        
+        # 閉じていないn番カッコがある場合はエラー
+        if current_volta is not None:
+            raise ParseError("Unclosed volta bracket", self.current_line)
+        
+        final_text = '\n'.join(result)
+        self.debug_print(f"Output text:\n{final_text}")
+        return final_text 
