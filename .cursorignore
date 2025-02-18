@@ -1,0 +1,13 @@
+# env
+.venv
+
+# python
+.pytest_cache
+build
+dist
+pip-wheel-metadata
+tabscript.egg-info
+
+# images
+images/
+

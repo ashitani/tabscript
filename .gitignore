@@ -20,6 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 pip-wheel-metadata/
+.pytest_cache/
 
 # Virtual Environment
 .env

@@ -412,8 +412,15 @@ class Renderer:
                 
                 # 音符を描画
                 if not note.is_rest:
-                    y = y_positions[note.string - 1]
-                    self._draw_fret_number(note_x, y, note.fret)
+                    if note.is_chord and note.is_chord_start:
+                        # 和音の最初の音符の場合、すべての音符を描画
+                        self.debug_print(f"Rendering chord with {len(note.chord_notes) + 1} notes")
+                        self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret)
+                        for chord_note in note.chord_notes:
+                            self._draw_fret_number(note_x, y_positions[chord_note.string - 1], chord_note.fret)
+                    elif not note.is_chord:
+                        # 通常の音符の場合
+                        self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret)
                 
                 note_x += note_width
             

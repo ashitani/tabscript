@@ -465,144 +465,82 @@ class Parser:
         return notes
 
     def _parse_note(self, token: str) -> Optional[Note]:
-        """音符トークンをパース"""
-        self.debug_print(f"\n=== _parse_note ===")
-        self.debug_print(f"Token: '{token}'")
-        
+        """音符をパース"""
         # 休符の処理
         if token.startswith('r'):
             duration = token[1:] or self.last_duration
-            self.last_duration = duration.rstrip('.')
-            # 音価のバリデーション
-            if not duration.rstrip('.').isdigit():
-                raise ParseError("Invalid duration", self.current_line)
-            
-            # stepを計算（4分音符=4ステップ）
-            base_duration = int(duration.rstrip('.'))
-            step = int(16 / base_duration)  # 16分音符=1ステップ
-            if duration.endswith('.'):
-                step += step // 2  # 付点の場合は1.5倍
-            
+            step = self._duration_to_step(duration)
             return Note(
                 string=0,
-                fret="0",
+                fret="R",
                 duration=duration,
                 is_rest=True,
-                step=step,
-                is_chord=False,
-                is_chord_start=False
+                step=step
             )
+
+        # タイ・スラー記号の処理
+        connect_next = False
+        if token.endswith('&'):
+            connect_next = True
+        token = token.rstrip('&')
         
-        # 通常の音符
-        parts = token.split(':')
+        # 音価の処理
+        parts = token.split(":")
         note_part = parts[0]
         duration = parts[1] if len(parts) > 1 else self.last_duration
-        
-        self.debug_print(f"Initial parse: note_part='{note_part}', duration='{duration}'")
-        
-        # 初期化
-        connect_next = False
-        is_up_move = False
-        is_down_move = False
         
         # 移動記号の処理
         is_up_move = note_part.startswith('u')
         is_down_move = note_part.startswith('d')
         if is_up_move or is_down_move:
-            self.debug_print(f"Found move mark: up={is_up_move}, down={is_down_move}")
             note_part = note_part[1:]  # 移動記号を除去
-            self.debug_print(f"After removing move mark: note_part='{note_part}'")
         
-        # 弦-フレット形式の場合
+        # 弦とフレットの処理
+        string = self.last_string  # 前の音符から弦番号を継承
         if '-' in note_part:
-            self.debug_print(f"Found string-fret format: '{note_part}'")
-            string_part, fret_part = note_part.split('-')
-            self.debug_print(f"After split: string_part='{string_part}', fret_part='{fret_part}'")
-            
-            # 弦番号をパース
-            string = self.safe_int(string_part.strip(), "_parse_note/string")
-            self.last_string = string
-            self.debug_print(f"Parsed string number: {string}")
-            
-            # タイ・スラー記号を処理（strip前に行う）
-            if fret_part.endswith('&'):
-                self.debug_print(f"Found tie/slur mark in fret_part: '{fret_part}'")
-                fret_part = fret_part[:-1]
-                connect_next = True
-                self.debug_print(f"After removing tie/slur: fret_part='{fret_part}'")
-            else:
-                self.debug_print(f"No tie/slur mark found in fret_part")
-            
-            # フレット番号をパース
-            fret_part = fret_part.strip()  # stripはタイ・スラー処理の後
-            self.debug_print(f"After strip: fret_part='{fret_part}'")
-            
-            # フレット番号をパース
-            if fret_part.upper() == 'X':
-                self.debug_print("Found muted note")
-                fret = fret_part
-            else:
-                self.debug_print(f"Parsing fret number: '{fret_part}'")
-                fret = str(self.safe_int(fret_part, "_parse_note/fret"))
-                self.debug_print(f"Parsed fret number: {fret}")
+            string, fret = note_part.split('-')
+            try:
+                string = int(string)
+            except ValueError:
+                raise ParseError(f"Invalid string number: {string}", self.current_line)
         else:
-            # フレット番号のみの場合
-            self.debug_print("Processing fret-only note")
-            if note_part.endswith('&'):
-                self.debug_print(f"Found tie/slur mark in note_part: '{note_part}'")
-                note_part = note_part[:-1]
-                connect_next = True
-                self.debug_print(f"After removing tie/slur: note_part='{note_part}'")
-            
-            string = self.last_string
-            
-            # note_partを一度だけstripする
-            note_part = note_part.strip()
-            self.debug_print(f"After strip: note_part='{note_part}'")
-            
-            # フレット番号をパース
-            if note_part.upper() == 'X':
-                self.debug_print("Found muted note")
-                fret = note_part
-            else:
-                self.debug_print(f"Parsing fret number: '{note_part}'")
-                fret = str(self.safe_int(note_part, "_parse_note/fret"))
-                self.debug_print(f"Parsed fret number: {fret}")
+            fret = note_part
         
-        # 音価のタイ・スラー処理
-        if duration.endswith('&'):
-            duration = duration[:-1]
-            connect_next = True
+        # フレット番号の検証
+        try:
+            if fret.upper() != "X" and fret.upper() != "R":
+                int(fret)
+        except ValueError:
+            raise ParseError(f"Invalid fret number: {fret}", self.current_line)
         
-        # 音価のバリデーション
-        if not duration.rstrip('.').isdigit():
-            raise ParseError("Invalid duration", self.current_line)
-        
-        self.last_duration = duration.rstrip('.')
-        
-        # 弦番号の範囲チェック
-        string_count = self._get_string_count()
-        if string < 1 or string > string_count:
-            raise ParseError("Invalid string number", self.current_line)
-        
-        # stepを計算（4分音符=4ステップ）
-        base_duration = int(duration.rstrip('.'))
-        step = int(16 / base_duration)  # 16分音符=1ステップ
-        if duration.endswith('.'):
-            step += step // 2  # 付点の場合は1.5倍
-        
-        return Note(
+        # Noteオブジェクトを作成
+        note = Note(
             string=string,
             fret=fret,
             duration=duration,
-            is_rest=False,
-            is_up_move=is_up_move,
-            is_down_move=is_down_move,
-            connect_next=connect_next,
-            step=step,
-            is_chord=False,
-            is_chord_start=False
+            is_rest=(fret.upper() == 'R'),
+            connect_next=connect_next
         )
+        
+        # ステップ数を計算
+        note.step = self._duration_to_step(duration)
+        
+        # 移動記号による弦番号の調整
+        if is_up_move:
+            note.string -= 1
+        elif is_down_move:
+            note.string += 1
+        
+        # 弦番号の範囲チェック
+        if not note.is_rest:  # 休符以外の場合のみチェック
+            if note.string < 1 or note.string > self._get_string_count():
+                raise ParseError(f"Invalid string number: {note.string}", self.current_line)
+        
+        # 継承用に弦番号と音価を保存
+        self.last_string = note.string  # 移動後の弦番号を保存
+        self.last_duration = duration.rstrip('.')
+        
+        return note
 
     def render_score(self, output_path: str):
         """タブ譜をファイルとして出力"""
@@ -777,6 +715,7 @@ class Parser:
     def _parse_bar_line(self, line: str) -> Bar:
         """1行の小節内容をパース"""
         bar = Bar()
+        current_chord = None  # 現在のコード名を保持
         
         # 空行の場合は空の小節を返す
         if not line:
@@ -831,70 +770,44 @@ class Parser:
             
             if token.startswith('@'):
                 bar.chord = token[1:]
+                current_chord = token[1:]
                 i += 1
                 continue
             
             # 和音の処理
             if token.startswith('('):
-                # 和音の終わりを探す
-                chord_notes = []
-                chord_duration = None
-                
-                # デバッグ出力を追加
-                self.debug_print(f"\n=== Processing chord token ===")
-                self.debug_print(f"Token: {token}")
-                
-                # 括弧内の音符を取得
-                if ':' in token:
-                    # 音価がある場合（例：(1-0 2-0 3-0):4）
-                    chord_part, duration = token.split(':')
-                    chord_duration = duration
-                    # 括弧を除去して音符を取得
-                    notes_str = chord_part[1:chord_part.rfind(')')].strip()
-                else:
-                    # 音価がない場合（例：(1-0 2-0 3-0)）
-                    notes_str = token[1:token.rfind(')')].strip()
-                
-                self.debug_print(f"Notes string: '{notes_str}'")
-                self.debug_print(f"Duration: {chord_duration}")
-                
+                # 和音の処理
+                chord_parts = token.split(':')
+                chord_content = chord_parts[0][1:-1].strip()  # 括弧の中身
+                chord_duration = chord_parts[1] if len(chord_parts) > 1 else self.last_duration
+
                 # 和音内の各音符をパース
-                first_note = True
-                for note_str in notes_str.split():  # 空白で分割
-                    self.debug_print(f"Processing note: '{note_str}'")
-                    if not note_str:  # 空文字列をスキップ
-                        continue
-                    
-                    # 音価を一時的に保存
-                    saved_duration = self.last_duration
-                    
-                    # 音符をパース
+                chord_notes = []
+                for note_str in chord_content.split():
                     note = self._parse_note(note_str)
-                    
-                    # 和音全体の音価を設定
-                    if chord_duration:
+                    if note:
                         note.duration = chord_duration
-                    
-                    # 和音の属性を設定
-                    note.is_chord = True
-                    note.is_chord_start = first_note
-                    first_note = False
-                    
-                    # 音価を復元
-                    self.last_duration = saved_duration
-                    
-                    chord_notes.append(note)
-                
-                bar.notes.extend(chord_notes)
-                i += 1
-                continue
-            
-            # 通常の音符の処理
-            self.debug_print(f"Processing as normal note: '{token}'")
-            note = self._parse_note(token)
-            if note:
-                self.debug_print(f"Created note: string={note.string}, fret={note.fret}, duration={note.duration}, connect_next={note.connect_next}")
-                bar.notes.append(note)
+                        note.step = self._duration_to_step(chord_duration)
+                        note.is_chord = True
+                        chord_notes.append(note)
+
+                if chord_notes:
+                    # 最初の音符をメインの音符として設定
+                    main_note = chord_notes[0]
+                    main_note.is_chord_start = True
+                    main_note.chord = current_chord  # コードはメインの音符にのみ設定
+                    main_note.chord_notes = chord_notes[1:]  # 2つ目以降の音符を和音ノートとして設定
+                    bar.notes.append(main_note)
+
+                self.last_duration = chord_duration.rstrip('.')
+                current_chord = None  # コードをリセット
+            else:
+                # 通常の音符の処理
+                note = self._parse_note(token)
+                if note:
+                    note.chord = current_chord  # コードを音符に設定
+                    bar.notes.append(note)
+                    current_chord = None  # コードをリセット
             i += 1
         
         # 小節の長さをチェック
@@ -935,9 +848,7 @@ class Parser:
             # コメント行をスキップ
             if line.strip().startswith('#'):
                 continue
-            # 行末コメントを除去
-            if '#' in line:
-                line = line[:line.index('#')].rstrip()
+            # 行末コメントは処理しない（仕様外）
             lines.append(line)
         return '\n'.join(lines)
 
@@ -1045,3 +956,11 @@ class Parser:
         final_text = '\n'.join(result)
         self.debug_print(f"Output text:\n{final_text}")
         return final_text 
+
+    def _duration_to_step(self, duration: str) -> int:
+        """音価をステップ数に変換（4分音符=4ステップ）"""
+        base_duration = int(duration.rstrip('.'))
+        step = int(16 / base_duration)  # 16分音符=1ステップ
+        if duration.endswith('.'):
+            step += step // 2  # 付点の場合は1.5倍
+        return step 
