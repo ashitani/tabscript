@@ -1,4 +1,5 @@
 import pytest
+from tabscript.models import Score, Section, Bar, Note, Column
 
 def pytest_addoption(parser):
     """pytestのコマンドラインオプションを追加"""
@@ -37,4 +38,48 @@ def debug_on_failure(request):
 def pytest_runtest_makereport(item, call):
     outcome = yield
     rep = outcome.get_result()
-    setattr(item, f"rep_{rep.when}", rep) 
+    setattr(item, f"rep_{rep.when}", rep)
+
+@pytest.fixture
+def sample_score():
+    """サンプルスコアを作成"""
+    score = Score(title="Test Score", tuning="guitar", beat="4/4")
+    
+    # セクション1
+    section1 = Section(name="Section 1")
+    
+    # 小節を作成
+    bar1 = Bar()
+    bar1.notes.append(Note(string=1, fret="0", duration="4"))
+    bar1.notes.append(Note(string=2, fret="2", duration="4"))
+    
+    bar2 = Bar()
+    bar2.notes.append(Note(string=3, fret="3", duration="4"))
+    bar2.notes.append(Note(string=4, fret="0", duration="4"))
+    
+    # 繰り返し記号付きの小節
+    bar3 = Bar(is_repeat_start=True)
+    bar3.notes.append(Note(string=5, fret="5", duration="4"))
+    bar3.notes.append(Note(string=6, fret="7", duration="4"))
+    
+    bar4 = Bar(is_repeat_end=True)
+    bar4.notes.append(Note(string=6, fret="5", duration="4"))
+    bar4.notes.append(Note(string=5, fret="3", duration="4"))
+    
+    # n番カッコ付きの小節
+    bar5 = Bar(volta_number=1)
+    bar5.notes.append(Note(string=4, fret="2", duration="4"))
+    bar5.notes.append(Note(string=3, fret="0", duration="4"))
+    
+    # Columnを作成
+    column1 = Column(bars=[bar1, bar2])
+    column2 = Column(bars=[bar3, bar4, bar5])
+    
+    # セクションにColumnを追加
+    section1.columns.append(column1)
+    section1.columns.append(column2)
+    
+    # スコアにセクションを追加
+    score.sections.append(section1)
+    
+    return score 
