@@ -384,6 +384,225 @@ class Parser:
         
         return notes
 
+    def _parse_bar_line(self, line: str) -> Bar:
+        """小節行をパース"""
+        self.debug_print("\n=== _parse_bar_line ===")
+        self.debug_print(f"Input: {line}")
+        
+        # デバッグモードを一時的に保存（テスト中のみ有効にする）
+        old_debug_mode = self.debug_mode
+        # self.debug_mode = True  # この行を削除または無効化
+        
+        bar = Bar()
+        
+        # 和音の処理のために、単純なsplitではなく、和音部分を保持するようにトークン分割
+        tokens = []
+        i = 0
+        in_chord = False
+        chord_start = 0
+        
+        while i < len(line):
+            if line[i] == '(' and not in_chord:
+                # 前のトークンがあれば追加
+                if i > 0 and chord_start < i:
+                    tokens.append(line[chord_start:i])
+                
+                in_chord = True
+                chord_start = i
+            elif line[i] == ')' and in_chord:
+                in_chord = False
+                # 和音の終わりを見つけたら、その後の音価部分も含めて1つのトークンとする
+                j = i + 1
+                while j < len(line) and line[j] != ' ':
+                    j += 1
+                tokens.append(line[chord_start:j])
+                i = j
+                chord_start = j  # 次のトークンの開始位置を更新
+                continue
+            elif line[i] == ' ' and not in_chord:
+                if i > 0 and chord_start < i:
+                    tokens.append(line[chord_start:i])
+                chord_start = i + 1
+            
+            i += 1
+        
+        # 最後のトークンを追加
+        if chord_start < len(line):
+            tokens.append(line[chord_start:])
+        
+        self.debug_print(f"Tokens: {tokens}")
+        
+        current_string = self.last_string
+        current_chord = None
+        chord_applied = False
+        
+        for token in tokens:
+            self.debug_print(f"Processing token: {token}")
+            
+            # コード名
+            if token.startswith('@'):
+                current_chord = token[1:]
+                bar.chord = current_chord
+                chord_applied = False
+                self.debug_print(f"Found chord: {current_chord}")
+                continue
+            
+            # 休符
+            if token.startswith('r'):
+                duration = token[1:]
+                if not duration:
+                    duration = self.last_duration
+                else:
+                    self.last_duration = duration
+                
+                note = Note(
+                    string=0,  # 休符は弦番号0
+                    fret="R",
+                    duration=duration,
+                    chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
+                    is_rest=True
+                )
+                bar.notes.append(note)
+                chord_applied = True  # コードが適用された
+                self.debug_print(f"Added rest note: {note}")
+                continue
+            
+            # 上移動記号
+            if token.startswith('u'):
+                try:
+                    note = self._parse_note(token, self.last_duration, current_chord if not chord_applied else None)
+                    bar.notes.append(note)
+                    current_string = note.string
+                    chord_applied = True  # コードが適用された
+                    self.debug_print(f"Added up move note: {note}")
+                    continue
+                except ParseError as e:
+                    raise e  # ParseErrorをそのまま再発生
+                except Exception as e:
+                    raise ParseError(f"Invalid up move: {token}", self.current_line)
+            
+            # 下移動記号
+            if token.startswith('d'):
+                try:
+                    note = self._parse_note(token, self.last_duration, current_chord if not chord_applied else None)
+                    bar.notes.append(note)
+                    current_string = note.string
+                    chord_applied = True  # コードが適用された
+                    self.debug_print(f"Added down move note: {note}")
+                    continue
+                except ParseError as e:
+                    raise e  # ParseErrorをそのまま再発生
+                except Exception as e:
+                    raise ParseError(f"Invalid down move: {token}", self.current_line)
+            
+            # 和音の処理
+            if token.startswith('('):
+                try:
+                    self.debug_print(f"Processing chord token: {token}")
+                    
+                    # 和音の形式を解析
+                    chord_part_end = token.find(')')
+                    if chord_part_end == -1:
+                        raise ParseError(f"Invalid chord format: missing closing parenthesis in {token}", self.current_line)
+                    
+                    chord_part = token[1:chord_part_end]
+                    duration_part = token[chord_part_end+1:]
+                    
+                    self.debug_print(f"Chord part: {chord_part}, Duration part: {duration_part}")
+                    
+                    # 音価の抽出
+                    duration = self.last_duration
+                    if duration_part.startswith(':'):
+                        duration = duration_part[1:]
+                        self.last_duration = duration
+                    
+                    self.debug_print(f"Chord duration: {duration}")
+                    
+                    # 和音の音符を作成
+                    chord_notes = []
+                    
+                    # 和音の構成音を解析
+                    chord_note_tokens = chord_part.split()
+                    self.debug_print(f"Chord note tokens: {chord_note_tokens}")
+                    
+                    # 和音の各音符を処理
+                    if len(chord_note_tokens) > 0:
+                        # 最初の音符の情報を取得（メイン音符）
+                        first_note_parts = chord_note_tokens[0].split('-')
+                        if len(first_note_parts) != 2:
+                            raise ParseError(f"Invalid chord note format: {chord_note_tokens[0]}", self.current_line)
+                            
+                        first_string = int(first_note_parts[0])
+                        first_fret = first_note_parts[1]
+                        
+                        self.debug_print(f"First note: string={first_string}, fret={first_fret}")
+                        
+                        # 残りの音符を処理（和音の構成音）
+                        for i in range(1, len(chord_note_tokens)):
+                            chord_note = chord_note_tokens[i]
+                            parts = chord_note.split('-')
+                            if len(parts) != 2:
+                                raise ParseError(f"Invalid chord note format: {chord_note}", self.current_line)
+                            
+                            string = int(parts[0])
+                            fret = parts[1]
+                            
+                            self.debug_print(f"Chord note {i}: string={string}, fret={fret}")
+                            
+                            # 和音の構成音を作成
+                            note = Note(
+                                string=string,
+                                fret=fret,
+                                duration=duration,
+                                is_chord=True
+                            )
+                            chord_notes.append(note)
+                        
+                        # メイン音符を作成
+                        main_note = Note(
+                            string=first_string,
+                            fret=first_fret,
+                            duration=duration,
+                            chord=current_chord if not chord_applied else None,
+                            is_chord=True,
+                            is_chord_start=True,
+                            chord_notes=chord_notes
+                        )
+                        
+                        # 最後に使用した弦番号を更新
+                        self.last_string = first_string
+                        
+                        self.debug_print(f"Adding main chord note: {main_note}")
+                        bar.notes.append(main_note)
+                        chord_applied = True  # コードが適用された
+                    
+                    continue
+                except ParseError as e:
+                    raise e
+                except Exception as e:
+                    self.debug_print(f"Exception in chord processing: {e}")
+                    raise ParseError(f"Invalid chord format: {token}", self.current_line)
+            
+            # 通常の音符
+            self.debug_print(f"Processing as regular note: {token}")
+            note = self._parse_note(token, self.last_duration, current_chord if not chord_applied else None)
+            bar.notes.append(note)
+            current_string = note.string
+            chord_applied = True  # コードが適用された
+            self.debug_print(f"Added regular note: {note}")
+        
+        # ステップ数の計算
+        self._calculate_steps(bar)
+        
+        self.debug_print(f"Final bar notes count: {len(bar.notes)}")
+        for i, note in enumerate(bar.notes):
+            self.debug_print(f"Note {i}: string={note.string}, fret={note.fret}, duration={note.duration}, chord={note.chord}, is_chord={note.is_chord}")
+        
+        # デバッグモードを元に戻す
+        self.debug_mode = old_debug_mode
+        
+        return bar
+
     def _parse_note(self, token: str, default_duration: str, chord: Optional[str] = None) -> Note:
         """音符トークンを解析"""
         # スラー/タイの処理
@@ -399,6 +618,56 @@ class Parser:
         if len(parts) > 1:
             duration = parts[1]
             self.last_duration = duration
+        
+        # 上下移動記号の処理
+        if note_part.startswith('u') or note_part.startswith('d'):
+            direction = note_part[0]
+            try:
+                fret = note_part[1:]  # 移動後のフレット番号
+                
+                # 弦番号の計算
+                if direction == 'u':
+                    string = self.last_string - 1  # 1弦上に移動
+                else:  # direction == 'd'
+                    string = self.last_string + 1  # 1弦下に移動
+                    
+                # 弦番号の範囲チェック
+                if string < 1:
+                    raise ParseError(f"Invalid string movement: {note_part} (results in string {string})", self.current_line)
+                
+                # チューニングに基づいて弦の数を決定
+                if self.score.tuning == "guitar":
+                    max_strings = 6
+                elif self.score.tuning == "bass":
+                    max_strings = 4
+                elif self.score.tuning == "ukulele":
+                    max_strings = 4
+                elif self.score.tuning == "guitar7":
+                    max_strings = 7
+                elif self.score.tuning == "bass5":
+                    max_strings = 5
+                else:
+                    max_strings = 6  # デフォルト
+                
+                # 弦番号の範囲チェック（下限）
+                if string > max_strings:
+                    raise ParseError(f"Invalid string movement: {note_part} (results in string {string})", self.current_line)
+                
+                # 弦番号を更新
+                self.last_string = string
+                
+                # 新しい音符を作成して返す
+                return Note(
+                    string=string,
+                    fret=fret,
+                    duration=duration,
+                    chord=chord,
+                    is_up_move=(direction == 'u'),
+                    is_down_move=(direction == 'd'),
+                    connect_next=connect_next
+                )
+            except ValueError:
+                raise ParseError(f"Invalid string movement: {note_part}", self.current_line)
         
         # 弦-フレット形式の解析
         if '-' in note_part:
@@ -438,7 +707,7 @@ class Parser:
         )
 
     def _validate_string_number(self, string: int) -> bool:
-        """弦番号の検証
+        """弦番号の妥当性を検証
         
         Args:
             string: 検証する弦番号
@@ -460,22 +729,22 @@ class Parser:
             return True
         
         # チューニングに基づいて弦の数を決定
-        tuning = self.score.tuning
-        if tuning == "guitar":
-            max_string = 6
-        elif tuning == "guitar7":
-            max_string = 7
-        elif tuning == "bass":
-            max_string = 4
-        elif tuning == "bass5":
-            max_string = 5
-        elif tuning == "ukulele":
-            max_string = 4
+        if self.score.tuning == "guitar":
+            max_strings = 6
+        elif self.score.tuning == "bass":
+            max_strings = 4
+        elif self.score.tuning == "ukulele":
+            max_strings = 4
+        elif self.score.tuning == "guitar7":
+            max_strings = 7
+        elif self.score.tuning == "bass5":
+            max_strings = 5
         else:
-            max_string = 6  # デフォルト
+            max_strings = 6  # デフォルト
         
-        if string < 1 or string > max_string:
-            raise ParseError(f"Invalid string number: {string} (must be between 1-{max_string})", self.current_line)
+        # 弦番号の範囲チェック
+        if string < 1 or string > max_strings:
+            raise ParseError(f"Invalid string number: {string} (must be between 1 and {max_strings})", self.current_line)
         
         return True
 
@@ -993,168 +1262,6 @@ class Parser:
             raise ParseError("Unclosed repeat bracket", len(lines))
         
         return '\n'.join(result)
-
-    def _parse_bar_line(self, line: str) -> Bar:
-        """小節の内容を解析して小節オブジェクトを返す"""
-        self.debug_print(f"\n=== _parse_bar_line ===")
-        self.debug_print(f"Input: {line}")
-        
-        bar = Bar()
-        tokens = self._tokenize_bar_line(line)
-        self.debug_print(f"Tokens: {tokens}")
-        
-        current_chord = None
-        current_string = self.last_string
-        chord_applied = False  # コードが適用されたかのフラグ
-        
-        for token in tokens:
-            # コード名の処理
-            if token.startswith('@'):
-                current_chord = token[1:]  # @を除去
-                bar.chord = current_chord  # 小節のコードも設定
-                chord_applied = False  # 新しいコードはまだ適用されていない
-                continue
-            
-            # 休符の処理
-            if token.startswith('r'):
-                duration = token[1:]
-                note = Note(
-                    string=0,  # 休符は弦番号0
-                    fret="R",  # 休符はR
-                    duration=duration,
-                    chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
-                    is_rest=True
-                )
-                bar.notes.append(note)
-                self.last_duration = duration
-                chord_applied = True  # コードが適用された
-                continue
-            
-            # 上移動記号
-            if token.startswith('u'):
-                try:
-                    fret = token[1:]
-                    if ':' in fret:
-                        fret, duration = fret.split(':')
-                        self.last_duration = duration
-                    else:
-                        duration = self.last_duration
-                    
-                    current_string -= 1  # 弦を上に移動
-                    note = Note(
-                        string=current_string,
-                        fret=fret,
-                        duration=duration,
-                        chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
-                        is_up_move=True
-                    )
-                    bar.notes.append(note)
-                    self.last_string = current_string
-                    chord_applied = True  # コードが適用された
-                    continue
-                except Exception as e:
-                    raise ParseError(f"Invalid up move: {token}", self.current_line)
-            
-            # 下移動記号
-            if token.startswith('d'):
-                try:
-                    fret = token[1:]
-                    if ':' in fret:
-                        fret, duration = fret.split(':')
-                        self.last_duration = duration
-                    else:
-                        duration = self.last_duration
-                    
-                    current_string += 1  # 弦を下に移動
-                    note = Note(
-                        string=current_string,
-                        fret=fret,
-                        duration=duration,
-                        chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
-                        is_down_move=True
-                    )
-                    bar.notes.append(note)
-                    self.last_string = current_string
-                    chord_applied = True  # コードが適用された
-                    continue
-                except Exception as e:
-                    raise ParseError(f"Invalid down move: {token}", self.current_line)
-            
-            # 和音の処理
-            if token.startswith('(') and ')' in token:
-                chord_part = token[1:token.index(')')]
-                duration_part = token[token.index(')')+1:]
-                
-                # 音価の抽出
-                duration = self.last_duration
-                if duration_part.startswith(':'):
-                    duration = duration_part[1:]
-                    self.last_duration = duration
-                
-                # 和音の音符を作成
-                chord_notes = []
-                for i, chord_note in enumerate(chord_part.split()):
-                    parts = chord_note.split('-')
-                    if len(parts) != 2:
-                        raise ParseError(f"Invalid chord note format: {chord_note}", self.current_line)
-                    
-                    string = int(parts[0])
-                    fret = parts[1]
-                    
-                    note = Note(
-                        string=string,
-                        fret=fret,
-                        duration=duration,
-                        chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
-                        is_chord=True
-                    )
-                    chord_notes.append(note)
-                
-                # 和音の最初の音符をメインとして追加
-                if chord_notes:
-                    main_note = chord_notes[0]
-                    main_note.is_chord_start = True
-                    main_note.chord_notes = chord_notes[1:]
-                    bar.notes.append(main_note)
-                    chord_applied = True  # コードが適用された
-                
-                continue
-            
-            # 通常の音符
-            note = self._parse_note(token, self.last_duration, current_chord if not chord_applied else None)
-            bar.notes.append(note)
-            current_string = note.string
-            chord_applied = True  # コードが適用された
-        
-        # ステップ数の計算
-        self._calculate_steps(bar)
-        
-        return bar
-
-    def _tokenize_bar_line(self, line: str) -> List[str]:
-        """小節の内容をトークンに分割"""
-        tokens = []
-        current_token = ""
-        in_chord = False
-        
-        for char in line:
-            if char.isspace() and not in_chord:
-                if current_token:
-                    tokens.append(current_token)
-                    current_token = ""
-                continue
-            
-            if char == '(':
-                in_chord = True
-            elif char == ')':
-                in_chord = False
-            
-            current_token += char
-        
-        if current_token:
-            tokens.append(current_token)
-        
-        return tokens
 
     def _calculate_steps(self, bar: Bar) -> None:
         """音符のステップ数を計算"""

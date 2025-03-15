@@ -50,3 +50,6 @@ tabs/
 
 # Keep sample files
 !samples/*.tab
+
+# log
+pytestdebug.log

@@ -367,3 +367,123 @@ def test_multi_bar_volta_bracket_parsing(debug_level):
     assert bar_info[2].volta_start == True
     assert bar_info[2].volta_end == True
     assert bar_info[2].repeat_end == True 
+
+def test_string_movement_notation():
+    """上下移動記号のテスト"""
+    parser = Parser(debug_mode=True)
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    parser.last_string = 3  # 3弦から開始
+    
+    # 上移動（u）のテスト
+    bar = parser._parse_bar_line("u2:4 u3:8")
+    assert len(bar.notes) == 2
+    
+    # 1つ目の音符（u2:4）
+    assert bar.notes[0].string == 2  # 3弦から1弦上に移動
+    assert bar.notes[0].fret == "2"
+    assert bar.notes[0].duration == "4"
+    assert bar.notes[0].is_up_move
+    
+    # 2つ目の音符（u3:8）
+    assert bar.notes[1].string == 1  # 2弦から1弦上に移動
+    assert bar.notes[1].fret == "3"
+    assert bar.notes[1].duration == "8"
+    assert bar.notes[1].is_up_move
+    
+    # 下移動（d）のテスト
+    parser.last_string = 2  # 2弦から開始
+    bar = parser._parse_bar_line("d3:4 d2:8")
+    assert len(bar.notes) == 2
+    
+    # 1つ目の音符（d3:4）
+    assert bar.notes[0].string == 3  # 2弦から1弦下に移動
+    assert bar.notes[0].fret == "3"
+    assert bar.notes[0].duration == "4"
+    assert bar.notes[0].is_down_move
+    
+    # 2つ目の音符（d2:8）
+    assert bar.notes[1].string == 4  # 3弦から1弦下に移動
+    assert bar.notes[1].fret == "2"
+    assert bar.notes[1].duration == "8"
+    assert bar.notes[1].is_down_move
+    
+    # 音価の省略テスト
+    parser.last_string = 3
+    parser.last_duration = "4"
+    bar = parser._parse_bar_line("u2 d3")
+    assert len(bar.notes) == 2
+    
+    # 1つ目の音符（u2）- 音価は継承
+    assert bar.notes[0].string == 2
+    assert bar.notes[0].fret == "2"
+    assert bar.notes[0].duration == "4"  # 継承された音価
+    
+    # 2つ目の音符（d3）- 音価は継承
+    assert bar.notes[1].string == 3  # 2弦から1弦下に移動
+    assert bar.notes[1].fret == "3"
+    assert bar.notes[1].duration == "4"  # 継承された音価
+    
+    # 範囲外の移動テスト
+    parser.last_string = 1  # 1弦から開始
+    with pytest.raises(ParseError):
+        parser._parse_bar_line("u2:4")  # 1弦からさらに上は存在しない
+    
+    parser.last_string = 6  # 6弦から開始
+    with pytest.raises(ParseError):
+        parser._parse_bar_line("d2:4")  # 6弦からさらに下は存在しない（標準ギターの場合） 
+
+def test_string_movement_duration_calculation():
+    """上下移動記号を含む小節の音価計算のテスト"""
+    parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    parser.last_string = 5  # 5弦から開始
+    
+    # 上移動記号を含む小節
+    bar = parser._parse_bar_line("5-5:8 7 u4 5 7 u4 6 7")
+    
+    # 各音符のステップ数を確認
+    assert len(bar.notes) == 8
+    for note in bar.notes:
+        assert note.step == 2  # 各音符は8分音符（2ステップ）
+    
+    # 小節の長さが4/4拍子に一致することを確認
+    total_steps = sum(note.step for note in bar.notes)
+    assert total_steps == 16  # 4/4拍子は16ステップ
+
+def test_chord_duration_calculation():
+    """和音の音価計算のテスト"""
+    parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    
+    # 和音を含む小節の音価計算
+    bar = parser._parse_bar_line("@C (1-3 2-5 3-5 4-5 5-3 6-3):4 (1-x 2-x 3-x 4-x 5-x 6-x):4 (1-x 2-x 3-x 4-x 5-x 6-x):4 (1-x 2-x 3-x 4-x 5-x 6-x):4")
+    
+    # 小節の長さが4/4拍子に一致することを確認
+    total_steps = sum(note.step for note in bar.notes)
+    assert total_steps == 16  # 4/4拍子は16ステップ
+    
+    # 各和音の音価が正しいことを確認
+    for note in bar.notes:
+        assert note.step == 4  # 各和音は4分音符（4ステップ） 
+
+def test_continued_string_movement():
+    """弦移動が複数行にまたがる場合のテスト"""
+    parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    
+    # 1行目: 5弦から開始して上移動を含む
+    bar1 = parser._parse_bar_line("5-3:8 5 u2 3 5 u2 4 5")
+    assert len(bar1.notes) == 8
+    assert sum(note.step for note in bar1.notes) == 16  # 4/4拍子
+    
+    # 最後の音符の弦番号を記録
+    last_string = bar1.notes[-1].string
+    parser.last_string = last_string
+    
+    # 2行目: 前の行から弦番号を継承
+    bar2 = parser._parse_bar_line("5 4 2 d5 3 2 d5 3")
+    assert len(bar2.notes) == 8
+    assert sum(note.step for note in bar2.notes) == 16  # 4/4拍子
+    
+    # 最初の音符が前の行の最後の音符の弦番号を継承していることを確認
+    assert bar2.notes[0].string == last_string 
