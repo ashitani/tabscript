@@ -1,9 +1,11 @@
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Union
+from pathlib import Path
 import re
 from .models import Score, Section, Bar, Note, Column
 from .exceptions import ParseError, TabScriptError
 from fractions import Fraction
 from dataclasses import dataclass
+import os
 
 @dataclass
 class BarInfo:
@@ -28,17 +30,39 @@ class ScoreStructure:
     sections: List[SectionStructure]
 
 class Parser:
-    def __init__(self):
+    def __init__(self, debug_mode: bool = False, debug_level: int = None, skip_validation: bool = False):
+        """パーサーを初期化
+        
+        Args:
+            debug_mode: デバッグ出力を有効にするかどうか
+            debug_level: デバッグレベル（1: 基本情報、2: 詳細情報、3: 全情報）
+            skip_validation: 検証をスキップするかどうか
+        """
+        self.debug_mode = debug_mode
+        
+        # 環境変数からデバッグレベルを取得（指定がない場合）
+        if debug_level is None:
+            env_level = os.environ.get("TABSCRIPT_DEBUG_LEVEL")
+            self.debug_level = int(env_level) if env_level else 1
+        else:
+            self.debug_level = debug_level
+            
+        self.skip_validation = skip_validation
         self.score = None
         self.current_section = None
         self.current_line = 0
-        self.last_string = 1      # デフォルトは1弦
-        self.last_duration = "4"  # デフォルトは4分音符
-        self.debug_mode = False  # デバッグモードのフラグ
+        self.last_string = 1
+        self.last_duration = "4"
 
-    def debug_print(self, *args, **kwargs):
-        """デバッグモードの時だけ出力"""
-        if self.debug_mode:
+    def debug_print(self, *args, level: int = 1, **kwargs):
+        """デバッグ出力を行う
+        
+        Args:
+            *args: 出力する内容
+            level: このメッセージのデバッグレベル（1: 基本情報、2: 詳細情報、3: 全情報）
+            **kwargs: print関数に渡す追加の引数
+        """
+        if self.debug_mode and level <= self.debug_level:
             print(*args, **kwargs)
 
     def _preprocess_text(self, text: str) -> str:
@@ -59,9 +83,14 @@ class Parser:
             # 複数行コメントの処理
             if in_multiline_comment:
                 self.debug_print("In multiline comment")
-                if line.endswith("'''") or line.endswith('"""'):
+                if line.endswith("'''") or line.startswith('"""'):
                     self.debug_print("Found multiline comment end")
                     in_multiline_comment = False
+                continue
+            
+            # 行コメントをスキップ
+            if line.startswith('#'):
+                self.debug_print("Skipping line starting with #")
                 continue
             
             # 複数行コメントの開始
@@ -70,12 +99,22 @@ class Parser:
                 in_multiline_comment = True
                 continue
             
-            # 行頭#のコメントをスキップ（行頭のみ）
-            if line.lstrip().startswith('#'):
-                self.debug_print("Skipping line starting with #")
-                continue
+            # 行末コメントを除去
+            if '#' in line:
+                comment_pos = line.find('#')
+                # シャープ記号がクォート内にある場合はコメントとみなさない
+                in_quote = False
+                for i in range(comment_pos):
+                    if line[i] == '"' and (i == 0 or line[i-1] != '\\'):
+                        in_quote = not in_quote
+                
+                if not in_quote:  # クォート外のシャープ記号はコメント
+                    self.debug_print(f"Removing end-of-line comment at position {comment_pos}")
+                    line = line[:comment_pos].strip()
+                    if not line:  # コメント除去後に空行になった場合はスキップ
+                        self.debug_print("Line is empty after comment removal, skipping")
+                        continue
             
-            # 有効な行を追加
             self.debug_print(f"Adding line: '{line}'")
             processed_lines.append(line)
         
@@ -83,43 +122,38 @@ class Parser:
         self.debug_print(f"\nFinal result:\n{result}")
         return result
 
-    def parse(self, source: str) -> Score:
-        """TabScriptをパースしてScoreオブジェクトを返す"""
-        self.debug_print("\n=== parse ===")
-        self.debug_print(f"Parsing source: {source}")
-
-        # ファイルかテキストかを判断
-        text = self._load_source(source)
-        self.debug_print(f"\nLoaded text:\n{text}")
-
-        # 1. コメント除去フェーズ
-        text = self._remove_comments(text)
-        self.debug_print(f"\nAfter comment removal:\n{text}")
-
-        # 2. 空行正規化フェーズ
-        text = self._normalize_empty_lines(text)
-        self.debug_print(f"\nAfter empty line normalization:\n{text}")
-
-        # 3. 繰り返し記号の一行化フェーズ
-        text = self._normalize_repeat_brackets(text)
-        self.debug_print(f"\nAfter repeat bracket normalization:\n{text}")
-
-        # 4. n番カッコの一行化フェーズ
+    def parse(self, input_data: str) -> Score:
+        """タブ譜テキストをパースしてScoreオブジェクトを返す
+        
+        Args:
+            input_data: タブ譜テキストまたはファイルパス
+            
+        Returns:
+            パース結果のScoreオブジェクト
+        """
+        # ファイルパスが渡された場合はファイルを読み込む
+        if not input_data.startswith('$') and not input_data.startswith('[') and '\n' not in input_data:
+            try:
+                with open(input_data, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            except FileNotFoundError:
+                raise ParseError(f"File not found: {input_data}", 0)
+        else:
+            text = input_data
+        
+        # 前処理
+        text = self._clean_text(text)
         text = self._normalize_volta_brackets(text)
-        self.debug_print(f"\nAfter volta bracket normalization:\n{text}")
-
-        # 5. メタデータとセクション構造の抽出
+        
+        # 構造解析
         structure = self._extract_structure(text)
-        self.debug_print(f"\nExtracted structure:")
-        self.debug_print(f"Metadata: {structure.metadata}")
-        self.debug_print(f"Sections: {[s.name for s in structure.sections]}")
-
-        # 6. スコアの構築
+        
+        # スコア構築
         self.score = self._create_score(structure, text)
-
+        
         return self.score
     
-    def _load_source(self, source: str) -> str:
+    def _load_source(self, source: Union[str, Path]) -> str:
         """ファイルパスまたはテキストから入力を読み込む"""
         if '\n' in source:
             return source
@@ -127,131 +161,19 @@ class Parser:
             return f.read()
     
     def _clean_text(self, text: str) -> str:
-        """コメントと空行の除去、括弧記号の正規化"""
-        raw_lines = text.split('\n')
-        processed_lines = []
+        """
+        不要な空行とコメントを除去
+        """
+        # 複数行コメントを除去（未終了のものも含む）
+        text = re.sub(r"'''.*?'''|'''.*$", "", text, flags=re.DOTALL)
+        text = re.sub(r'""".*?"""|""".*$', "", text, flags=re.DOTALL)
         
-        # 括弧記号の正規化
-        i = 0
-        in_volta = False  # n番カッコの中にいるかどうか
-        while i < len(raw_lines):
-            line = raw_lines[i].strip()
-            
-            # 空行スキップ
-            if not line:
-                i += 1
-                continue
-            
-            # n番カッコの開始行を処理
-            if line.startswith('{') and len(line) > 1:
-                try:
-                    # n番カッコの入れ子チェック
-                    if in_volta:
-                        raise ParseError("Nested volta brackets are not allowed", self.current_line)
-                    
-                    # 複数番号のパターン（例：1,2）をチェック
-                    numbers_str = line[1:].strip()
-                    if ',' in numbers_str:
-                        numbers = [n.strip() for n in numbers_str.split(',')]
-                        numbers_text = ','.join(numbers)
-                        if i + 1 < len(raw_lines) and i + 2 < len(raw_lines):
-                            next_line = raw_lines[i + 1].strip()
-                            end_line = raw_lines[i + 2].strip()
-                            if end_line == f"{numbers_text}}}":
-                                # 複数番号のn番カッコを1行に正規化
-                                processed_lines.append(f"{{{numbers_text} {next_line} }}{numbers_text}")
-                                i += 3
-                                continue
-                    else:
-                        # 単一番号の処理
-                        number = int(numbers_str)
-                        if i + 1 < len(raw_lines) and i + 2 < len(raw_lines):
-                            next_line = raw_lines[i + 1].strip()
-                            end_line = raw_lines[i + 2].strip()
-                            if end_line == f"{number}}}":
-                                # n番カッコを1行に正規化
-                                processed_lines.append(f"{{{number} {next_line} }}{number}")
-                                i += 3
-                                continue
-                    in_volta = True  # n番カッコの中に入る
-                except ValueError:
-                    pass
-            
-            # n番カッコの終了行を処理
-            if line.endswith('}') and len(line) > 1:
-                try:
-                    number = int(line[:-1])
-                    in_volta = False  # n番カッコから出る
-                except ValueError:
-                    pass
-            
-            # 通常の繰り返し記号を処理
-            if line == '{':
-                if i + 1 < len(raw_lines) and i + 2 < len(raw_lines):
-                    next_line = raw_lines[i + 1].strip()
-                    end_line = raw_lines[i + 2].strip()
-                    if end_line == '}':
-                        # 繰り返し記号を1行に正規化
-                        processed_lines.append(f"{{ {next_line} }}")
-                        i += 3
-                        continue
-            
-            # その他の行はそのまま追加
-            processed_lines.append(line)
-            i += 1
-        
-        # コメント処理
-        cleaned_lines = []
-        in_multiline_comment = False
-        
-        for line in processed_lines:
-            line = line.strip()
-            
-            # 複数行コメントの処理
-            if in_multiline_comment:
-                if "'''" in line or '"""' in line:
-                    in_multiline_comment = False
-                    # コメント終了後のテキストを処理
-                    remaining = line[line.find("'''") + 3:] if "'''" in line else line[line.find('"""') + 3:]
-                    if remaining.strip() and not remaining.strip().startswith('#'):
-                        cleaned_lines.append(remaining.strip())
-                continue
-            
-            # 行内の複数行コメントを処理
-            while "'''" in line or '"""' in line:
-                marker = "'''" if "'''" in line else '"""'
-                before_comment = line[:line.find(marker)]
-                after_comment = line[line.find(marker) + 3:]
-                
-                if marker in after_comment:
-                    # 同じ行でコメントが終わる場合
-                    after_comment = after_comment[after_comment.find(marker) + 3:]
-                    if before_comment.strip():
-                        cleaned_lines.append(before_comment.strip())
-                    if after_comment.strip():
-                        cleaned_lines.append(after_comment.strip())
-                    line = ""
-                    break
-                else:
-                    # コメントが次の行まで続く場合
-                    if before_comment.strip():
-                        cleaned_lines.append(before_comment.strip())
-                    in_multiline_comment = True
-                    line = ""
-                    break
-            
-            # 行頭#のコメントをスキップ
-            if line.lstrip().startswith('#'):
-                continue
-            
-            # 行末コメントの除去
-            if '#' in line:
-                line = line[:line.find('#')].strip()
-            
-            if line:
-                cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
+        lines = text.splitlines()
+        # 行コメントと空行を除去
+        lines = [re.sub(r'#.*', '', line).strip() for line in lines]
+        lines = [line for line in lines if line]
+
+        return '\n'.join(lines)
     
     def _extract_structure(self, text: str) -> ScoreStructure:
         """メタデータとセクション構造の抽出"""
@@ -384,7 +306,7 @@ class Parser:
         in_chord = False
         in_chord_name = False  # コードネーム処理中かどうか
         skip_next = False
-
+        
         # トークン抽出のデバッグ
         self.debug_print("\nTokenizing:")
         i = 0
@@ -393,9 +315,9 @@ class Parser:
                 skip_next = False
                 i += 1
                 continue
-
+            
             char = notes_str[i]
-
+            
             # 行末コメントの開始を検出したら、そこで処理を終了
             # ただしコードネーム処理中は#を通常の文字として扱う
             if char == '#' and not in_chord_name:
@@ -408,13 +330,11 @@ class Parser:
                 if current_token:
                     tokens.append(current_token.strip())
                 current_token = char
-                in_chord_name = True  # コードネーム処理開始
-            elif in_chord_name and char.isspace():
-                # コードネーム処理終了
-                tokens.append(current_token.strip())
-                current_token = ""
-                in_chord_name = False
-            elif char == '(':
+                in_chord_name = True
+                i += 1
+                continue
+
+            if char == '(':
                 in_chord = True
                 current_token += char
             elif char == ')':
@@ -436,10 +356,10 @@ class Parser:
                 current_token += char
             i += 1
             self.debug_print(f"  char: '{notes_str[i-1]}', current_token: '{current_token}', in_chord: {in_chord}, in_chord_name: {in_chord_name}")
-
+        
         if current_token:
             tokens.append(current_token.strip())
-
+        
         self.debug_print(f"\nExtracted tokens: {tokens}")
         
         # トークンをパース
@@ -453,7 +373,7 @@ class Parser:
                 continue
             
             # 音符トークン
-            note = self._parse_note(token)
+            note = self._parse_note(token, self.last_duration, current_chord if not in_chord else None)
             # 前と同じコードなら None を設定
             if current_chord == last_chord:
                 note.chord = None
@@ -464,83 +384,100 @@ class Parser:
         
         return notes
 
-    def _parse_note(self, token: str) -> Optional[Note]:
-        """音符をパース"""
-        # 休符の処理
-        if token.startswith('r'):
-            duration = token[1:] or self.last_duration
-            step = self._duration_to_step(duration)
-            return Note(
-                string=0,
-                fret="R",
-                duration=duration,
-                is_rest=True,
-                step=step
-            )
-
-        # タイ・スラー記号の処理
+    def _parse_note(self, token: str, default_duration: str, chord: Optional[str] = None) -> Note:
+        """音符トークンを解析"""
+        # スラー/タイの処理
         connect_next = False
         if token.endswith('&'):
             connect_next = True
-        token = token.rstrip('&')
+            token = token[:-1]  # &を除去
         
-        # 音価の処理
-        parts = token.split(":")
+        parts = token.split(':')
         note_part = parts[0]
-        duration = parts[1] if len(parts) > 1 else self.last_duration
+        duration = default_duration
         
-        # 移動記号の処理
-        is_up_move = note_part.startswith('u')
-        is_down_move = note_part.startswith('d')
-        if is_up_move or is_down_move:
-            note_part = note_part[1:]  # 移動記号を除去
+        if len(parts) > 1:
+            duration = parts[1]
+            self.last_duration = duration
         
-        # 弦とフレットの処理
-        string = self.last_string  # 前の音符から弦番号を継承
+        # 弦-フレット形式の解析
         if '-' in note_part:
-            string, fret = note_part.split('-')
-            try:
-                string = int(string)
-            except ValueError:
-                raise ParseError(f"Invalid string number: {string}", self.current_line)
+            string_fret = note_part.split('-')
+            string = int(string_fret[0])
+            fret = string_fret[1]
+            
+            # 弦番号の妥当性を検証
+            self._validate_string_number(string)
+            
+            # フレット番号の検証
+            if fret.upper() != "X" and fret.upper() != "R":
+                try:
+                    int(fret)
+                except ValueError:
+                    raise ParseError(f"Invalid fret number: {fret}", self.current_line)
+            
+            self.last_string = string
         else:
+            # 弦番号の省略時は直前の弦番号を使用
+            string = self.last_string
             fret = note_part
         
-        # フレット番号の検証
-        try:
-            if fret.upper() != "X" and fret.upper() != "R":
-                int(fret)
-        except ValueError:
-            raise ParseError(f"Invalid fret number: {fret}", self.current_line)
+        # ミュート音の処理
+        is_muted = False
+        if fret.upper() == 'X':
+            is_muted = True
+            fret = 'X'
         
-        # Noteオブジェクトを作成
-        note = Note(
+        return Note(
             string=string,
             fret=fret,
             duration=duration,
-            is_rest=(fret.upper() == 'R'),
+            chord=chord,
+            is_muted=is_muted,
             connect_next=connect_next
         )
+
+    def _validate_string_number(self, string: int) -> bool:
+        """弦番号の検証
         
-        # ステップ数を計算
-        note.step = self._duration_to_step(duration)
+        Args:
+            string: 検証する弦番号
+            
+        Returns:
+            検証結果（True: 有効、False: 無効）
+            
+        Raises:
+            ParseError: 無効な弦番号の場合
+        """
+        self.debug_print(f"Validating string number: {string}", level=3)
         
-        # 移動記号による弦番号の調整
-        if is_up_move:
-            note.string -= 1
-        elif is_down_move:
-            note.string += 1
+        # 検証をスキップする場合
+        if self.skip_validation:
+            return True
         
-        # 弦番号の範囲チェック
-        if not note.is_rest:  # 休符以外の場合のみチェック
-            if note.string < 1 or note.string > self._get_string_count():
-                raise ParseError(f"Invalid string number: {note.string}", self.current_line)
+        # 休符の場合は弦番号0も有効
+        if string == 0:
+            return True
         
-        # 継承用に弦番号と音価を保存
-        self.last_string = note.string  # 移動後の弦番号を保存
-        self.last_duration = duration.rstrip('.')
+        # チューニングに基づいて弦の数を決定
+        tuning = self.score.tuning
+        if tuning == "guitar":
+            max_string = 6
+        elif tuning == "guitar7":
+            max_string = 7
+        elif tuning == "bass":
+            max_string = 4
+        elif tuning == "bass5":
+            max_string = 5
+        elif tuning == "ukulele":
+            max_string = 4
+        else:
+            max_string = 6  # デフォルト
         
-        return note
+        if string < 1 or string > max_string:
+            raise ParseError(f"Invalid string number: {string} (must be between 1-{max_string})", self.current_line)
+        
+        return True
 
     def render_score(self, output_path: str):
         """タブ譜をファイルとして出力"""
@@ -617,350 +554,822 @@ class Parser:
             else:
                 raise ParseError(f"Invalid number: {value}", self.current_line)
 
-    def _create_score(self, structure: ScoreStructure, cleaned_text: str) -> Score:
-        """スコア全体の構築"""
-        self.debug_print("\n=== _create_score ===")
+    def _create_score(self, structure: ScoreStructure, text: str) -> Score:
+        """スコア構造からScoreオブジェクトを構築"""
+        # メタデータの設定
+        score = Score()
+        for key, value in structure.metadata.items():
+            if key == 'title':
+                score.title = value
+            elif key == 'tuning':
+                score.tuning = value
+            elif key == 'beat':
+                score.beat = value
         
-        # メタデータからScoreを初期化（デフォルト値を使用）
-        self.score = Score(
-            title=structure.metadata.get('title', ''),
-            tuning=structure.metadata.get('tuning', 'guitar'),
-            beat=structure.metadata.get('beat', '4/4')
-        )
-        self.debug_print(f"Created score with metadata: title='{self.score.title}', tuning='{self.score.tuning}', beat='{self.score.beat}'")
+        # bars_per_lineの取得（デフォルトは4）
+        bars_per_line = 4
+        if 'bars_per_line' in structure.metadata:
+            try:
+                bars_per_line = int(structure.metadata['bars_per_line'])
+            except ValueError:
+                self.debug_print(f"Invalid bars_per_line value: {structure.metadata['bars_per_line']}")
         
-        # セクションがない場合は空のセクションを作成
-        if not structure.sections:
-            self.debug_print("No sections found, creating default section")
-            default_section = SectionStructure(name="", content=[cleaned_text])  # 渡されたcleaned_textを使用
-            structure.sections.append(default_section)
+        # スコアを現在のスコアとして設定（検証で使用）
+        self.score = score
         
-        # 各セクションの処理
-        for section_structure in structure.sections:  # 変数名を変更して明確に
-            self.debug_print(f"\nProcessing section: {section_structure.name}")
-            current_section = Section(name=section_structure.name)
+        # セクションの処理
+        for section_structure in structure.sections:
+            self.debug_print(f"Processing section: {section_structure.name}")
             
-            # セクション内の小節を解析
-            bars = self._analyze_section_bars(section_structure.content)  # SectionStructureのcontentを使用
-            self.debug_print(f"Found {len(bars)} bars")
+            # セクションの作成
+            section = Section(name=section_structure.name)
             
-            # 小節をColumnに分割して追加
-            current_bars = []
-            for bar in bars:
-                parsed_bar = self._parse_bar_line(bar.content)
-                parsed_bar.is_repeat_start = bar.repeat_start
-                parsed_bar.is_repeat_end = bar.repeat_end
-                parsed_bar.volta_number = bar.volta_number
-                current_bars.append(parsed_bar)
+            # セクション内容を小節に分割
+            bar_infos = self._analyze_section_bars(section_structure.content)
+            self.debug_print(f"Found {len(bar_infos)} bars")
+            
+            # 小節の作成
+            bars = []
+            for bar_info in bar_infos:
+                self.current_line += 1  # 行番号を更新
                 
-                # 4小節ごとにColumnを作成
-                if len(current_bars) >= 4:
-                    current_section.columns.append(Column(bars=current_bars.copy()))
-                    current_bars = []
+                # 小節の内容をパース
+                bar = self._parse_bar_line(bar_info.content)
+                
+                # 繰り返しと番号括弧の情報を設定
+                bar.is_repeat_start = bar_info.repeat_start
+                bar.is_repeat_end = bar_info.repeat_end
+                bar.volta_number = bar_info.volta_number
+                bar.volta_start = bar_info.volta_start
+                bar.volta_end = bar_info.volta_end
+                
+                # 小節の長さを検証（skip_validationがFalseの場合のみ）
+                if not self.skip_validation:
+                    self._validate_bar_duration(bar)
+                
+                bars.append(bar)
             
-            # 残りの小節があればColumnを作成
-            if current_bars:
-                current_section.columns.append(Column(bars=current_bars))
+            # 小節をカラムにグループ化
+            for i in range(0, len(bars), bars_per_line):
+                column_bars = bars[i:i+bars_per_line]
+                column = Column(bars=column_bars, bars_per_line=bars_per_line, beat=score.beat)
+                section.columns.append(column)
             
-            self.score.sections.append(current_section)
+            # セクションをスコアに追加
+            score.sections.append(section)
         
-        return self.score
+        return score
 
-    def _analyze_section_bars(self, lines: List[str]) -> List[BarInfo]:
-        """セクション内の小節構造を解析"""
-        bars = []
-        in_repeat = False
-        in_volta = False
-        repeat_content = False
-        current_volta_number = None
+    def _analyze_section_bars(self, content: List[str]) -> List[BarInfo]:
+        """セクション内容から小節情報を抽出
         
-        for line in lines:
-            line = line.strip()
+        Args:
+            content: セクションの内容（行のリスト）
             
-            # 空行はスキップ
-            if not line:
+        Returns:
+            小節情報のリスト
+        """
+        self.debug_print("\n=== _analyze_section_bars ===")
+        self.debug_print(f"Content: {content}")
+        
+        bar_infos = []
+        
+        # 各行を処理
+        i = 0
+        in_volta = False
+        volta_number = None
+        
+        while i < len(content):
+            line = content[i].strip()
+            self.debug_print(f"Processing line: {line}")
+            
+            # n番カッコの開始を検出（単独行の場合）
+            if line.startswith('{') and line[1:].strip().isdigit():
+                volta_number = int(line[1:].strip())
+                self.debug_print(f"Found volta start: {volta_number}")
+                in_volta = True
+                i += 1
                 continue
             
-            # 1行形式の繰り返し記号
+            # n番カッコの終了を検出（単独行の場合）
+            if line.endswith('}') and line[:-1].strip().isdigit():
+                end_volta_number = int(line[:-1].strip())
+                if end_volta_number == volta_number:
+                    self.debug_print(f"Found volta end: {volta_number}")
+                    in_volta = False
+                    volta_number = None
+                    i += 1
+                    continue
+            
+            # n番カッコ内の行を処理
+            if in_volta:
+                self.debug_print(f"Processing volta content: {line}")
+                
+                # 最後の行かどうかを確認
+                is_last_volta_line = False
+                if i + 1 < len(content):
+                    next_line = content[i + 1].strip()
+                    if next_line.endswith('}') and next_line[:-1].strip().isdigit():
+                        is_last_volta_line = True
+                else:
+                    is_last_volta_line = True
+                
+                bar_info = BarInfo(
+                    content=line,
+                    volta_number=volta_number,
+                    volta_start=(i == 1 or content[i-1].strip().startswith('{')),
+                    volta_end=is_last_volta_line,
+                    repeat_end=(is_last_volta_line and i + 2 < len(content) and content[i + 2].strip() == '}')
+                )
+                bar_infos.append(bar_info)
+                i += 1
+                continue
+            
+            # 繰り返し開始と共通部分（"{ 1-1:4 2-2:4" 形式）
+            if line.startswith('{ ') and not line.endswith(' }'):
+                bar_content = line[2:].strip()
+                self.debug_print(f"Found repeat start: {bar_content}")
+                
+                bar_info = BarInfo(
+                    content=bar_content,
+                    repeat_start=True,
+                    repeat_end=False
+                )
+                bar_infos.append(bar_info)
+                i += 1
+                continue
+            
+            # 繰り返し記号付きの小節（"{ 1-1:4 2-2:4 }" 形式）
             if line.startswith('{ ') and line.endswith(' }'):
-                content = line[2:-2].strip()
-                bar = BarInfo(
-                    content=content,
+                bar_content = line[2:-2].strip()
+                self.debug_print(f"Found repeat bar: {bar_content}")
+                
+                bar_info = BarInfo(
+                    content=bar_content,
                     repeat_start=True,
                     repeat_end=True
                 )
-                bars.append(bar)
+                bar_infos.append(bar_info)
+                i += 1
                 continue
             
-            # 1行形式のn番カッコ
-            match = re.match(r'{\s*(\d+)\s+([^}]+)\s+}\1', line)
-            if match:
-                number = int(match.group(1))
-                content = match.group(2).strip()
-                bar = BarInfo(
-                    content=content,
-                    volta_number=number,
-                    volta_start=True,
-                    volta_end=True
+            # 繰り返し終了のみの小節（"3-3:4 4-4:4 }" 形式）
+            if not line.startswith('{') and line.endswith(' }'):
+                bar_content = line[:-2].strip()
+                self.debug_print(f"Found repeat end only: {bar_content}")
+                
+                bar_info = BarInfo(
+                    content=bar_content,
+                    repeat_start=False,
+                    repeat_end=True
                 )
-                bars.append(bar)
-                continue
-            
-            # 通常の小節内容
-            bar = BarInfo(content=line)
-            bars.append(bar)
-        
-        return bars
-
-    def _parse_bar_line(self, line: str) -> Bar:
-        """1行の小節内容をパース"""
-        bar = Bar()
-        current_chord = None  # 現在のコード名を保持
-        
-        # 空行の場合は空の小節を返す
-        if not line:
-            return bar
-        
-        # トークンを抽出（和音を1つのトークンとして扱う）
-        tokens = []
-        i = 0
-        while i < len(line):
-            # 空白をスキップ
-            while i < len(line) and line[i].isspace():
-                i += 1
-            if i >= len(line):
-                break
-            
-            # トークンの開始
-            if line[i] == '(':
-                # 和音の終わりを探す
-                start = i
-                paren_count = 1
-                i += 1
-                while i < len(line) and paren_count > 0:
-                    if line[i] == '(':
-                        paren_count += 1
-                    elif line[i] == ')':
-                        paren_count -= 1
-                    i += 1
-                # 音価があれば含める
-                if i < len(line) and line[i] == ':':
-                    while i < len(line) and not line[i].isspace():
-                        i += 1
-                tokens.append(line[start:i])
-            else:
-                # 通常のトークン
-                start = i
-                while i < len(line) and not line[i].isspace():
-                    i += 1
-                token = line[start:i]
-                self.debug_print(f"Found token: '{token}'")
-                tokens.append(token)
-        
-        self.debug_print(f"\n=== Tokens ===")
-        self.debug_print(f"Input line: '{line}'")
-        self.debug_print(f"Extracted tokens: {tokens}")
-        
-        # トークンを処理
-        i = 0
-        while i < len(tokens):
-            token = tokens[i]
-            self.debug_print(f"\n=== Processing token ===")
-            self.debug_print(f"Token {i}: '{token}'")
-            
-            if token.startswith('@'):
-                bar.chord = token[1:]
-                current_chord = token[1:]
+                bar_infos.append(bar_info)
                 i += 1
                 continue
             
-            # 和音の処理
-            if token.startswith('('):
-                # 和音の処理
-                chord_parts = token.split(':')
-                chord_content = chord_parts[0][1:-1].strip()  # 括弧の中身
-                chord_duration = chord_parts[1] if len(chord_parts) > 1 else self.last_duration
-
-                # 和音内の各音符をパース
-                chord_notes = []
-                for note_str in chord_content.split():
-                    note = self._parse_note(note_str)
-                    if note:
-                        note.duration = chord_duration
-                        note.step = self._duration_to_step(chord_duration)
-                        note.is_chord = True
-                        chord_notes.append(note)
-
-                if chord_notes:
-                    # 最初の音符をメインの音符として設定
-                    main_note = chord_notes[0]
-                    main_note.is_chord_start = True
-                    main_note.chord = current_chord  # コードはメインの音符にのみ設定
-                    main_note.chord_notes = chord_notes[1:]  # 2つ目以降の音符を和音ノートとして設定
-                    bar.notes.append(main_note)
-
-                self.last_duration = chord_duration.rstrip('.')
-                current_chord = None  # コードをリセット
-            else:
-                # 通常の音符の処理
-                note = self._parse_note(token)
-                if note:
-                    note.chord = current_chord  # コードを音符に設定
-                    bar.notes.append(note)
-                    current_chord = None  # コードをリセット
+            # n番カッコ付きの小節（"{1 3-3:4 4-4:4 }1" 形式）
+            volta_match = re.match(r'\{(\d+) (.*) \}\d+', line)
+            if volta_match:
+                volta_number = int(volta_match.group(1))
+                bar_content = volta_match.group(2).strip()
+                self.debug_print(f"Found volta bar: {volta_number}, {bar_content}")
+                
+                # 繰り返し終了も含むかチェック
+                is_repeat_end = False
+                if i == len(content) - 1 or (i + 1 < len(content) and content[i + 1].strip() == '}'):
+                    is_repeat_end = True
+                
+                bar_info = BarInfo(
+                    content=bar_content,
+                    volta_number=volta_number,
+                    volta_start=True,
+                    volta_end=True,
+                    repeat_end=is_repeat_end
+                )
+                bar_infos.append(bar_info)
+                i += 1
+                continue
+            
+            # 通常の小節
+            bar_info = BarInfo(content=line)
+            bar_infos.append(bar_info)
             i += 1
         
-        # 小節の長さをチェック
-        total_steps = 0
-        i = 0
-        while i < len(bar.notes):
-            note = bar.notes[i]
-            if note.is_chord:
-                # 和音の場合は最初の音符のステップ数だけを加算
-                chord_steps = note.step
-                # 和音の残りの音符をスキップ
-                while i + 1 < len(bar.notes) and bar.notes[i + 1].is_chord:
-                    i += 1
-                total_steps += chord_steps
-            else:
-                # 通常の音符
-                total_steps += note.step
-            i += 1
-
-        # 拍子記号から期待されるステップ数を計算
-        beat = self.score.beat
-        numerator, denominator = map(int, beat.split('/'))
-        expected_steps = numerator * (16 // denominator)
-
-        self.debug_print(f"\n=== Bar duration check ===")
-        self.debug_print(f"Total steps: {total_steps}")
-        self.debug_print(f"Expected steps: {expected_steps}")
-
-        if total_steps > expected_steps:
-            raise ParseError("Bar duration exceeds time signature", self.current_line)
-
-        return bar 
-
-    def _remove_comments(self, text: str) -> str:
-        """コメントを除去"""
-        lines = []
-        for line in text.splitlines():
-            # コメント行をスキップ
-            if line.strip().startswith('#'):
-                continue
-            # 行末コメントは処理しない（仕様外）
-            lines.append(line)
-        return '\n'.join(lines)
-
-    def _normalize_empty_lines(self, text: str) -> str:
-        """空行を正規化"""
-        lines = text.splitlines()
-        result = []
-        prev_empty = False
-        
-        for line in lines:
-            is_empty = not line.strip()
-            # セクション区切りの空行は2行に
-            if is_empty and not prev_empty:
-                result.append('')
-                result.append('')
-            # 通常の空行はスキップ
-            elif not is_empty:
-                result.append(line)
-            prev_empty = is_empty
-        
-        return '\n'.join(result)
+        self.debug_print(f"Found {len(bar_infos)} bars")
+        return bar_infos
 
     def _normalize_repeat_brackets(self, text: str) -> str:
-        """繰り返し記号を一行形式に変換"""
+        """繰り返し記号の正規化"""
+        self.debug_print("\n=== _normalize_repeat_brackets ===")
         lines = text.splitlines()
         result = []
-        content = []
         in_repeat = False
+        repeat_content = []
+        repeat_start_line = 0
         
-        for line in lines:
-            line = line.strip()
-            if line == '{':
+        for i, line in enumerate(lines):
+            self.debug_print(f"Processing line {i+1}: '{line}'")
+            
+            # 空の繰り返し記号を検出 ({ })
+            if line.strip() == '{ }':
+                self.debug_print(f"Empty repeat bracket detected at line {i+1}")
+                raise ParseError("Empty repeat bracket", i + 1)
+            
+            # 繰り返し開始
+            if line.strip() == '{':
+                self.debug_print(f"Found repeat start at line {i+1}")
                 if in_repeat:
-                    raise ParseError("Nested repeat brackets are not allowed", self.current_line)
+                    raise ParseError("Nested repeat brackets are not allowed", i + 1)
                 in_repeat = True
-            elif line == '}' and in_repeat:
-                if not content:
-                    raise ParseError("Empty repeat bracket", self.current_line)
-                result.append(f"{{ {' '.join(content)} }}")
-                content = []
+                repeat_start_line = i + 1
+                repeat_content = []
+                continue
+            
+            # 繰り返し終了
+            if line.strip() == '}':
+                self.debug_print(f"Found repeat end at line {i+1}")
+                if not in_repeat:
+                    raise ParseError("Unmatched closing repeat bracket", i + 1)
+                
+                # 空の繰り返しをチェック
+                if not repeat_content:
+                    self.debug_print(f"Empty repeat bracket detected at line {i+1}")
+                    raise ParseError("Empty repeat bracket", i + 1)
+                
+                # 繰り返し内容を正規化
+                normalized = "{ " + " ".join(repeat_content) + " }"
+                self.debug_print(f"Normalized repeat: '{normalized}'")
+                result.append(normalized)
                 in_repeat = False
-            elif in_repeat and line:
-                content.append(line)
+                continue
+            
+            # 繰り返し内の行
+            if in_repeat:
+                self.debug_print(f"Adding content to repeat: '{line.strip()}'")
+                repeat_content.append(line.strip())
             else:
                 result.append(line)
         
-        # 閉じていない繰り返しがある場合はエラー
+        # 閉じられていない繰り返し
         if in_repeat:
-            raise ParseError("Unclosed repeat bracket", self.current_line)
+            raise ParseError("Unclosed repeat bracket", repeat_start_line)
         
         return '\n'.join(result)
 
     def _normalize_volta_brackets(self, text: str) -> str:
         """n番カッコを一行形式に変換"""
+        self.debug_print("\n=== _normalize_volta_brackets ===")
         lines = text.splitlines()
         result = []
         content = []
         current_volta = None
+        volta_stack = []  # n番カッコのスタック
+        in_repeat = False
         
-        self.debug_print("\n=== _normalize_volta_brackets ===")
-        self.debug_print(f"Input text:\n{text}")
-        
-        for line in lines:
-            line = line.strip()
-            self.debug_print(f"Processing line: '{line}'")
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            self.debug_print(f"Processing line {i+1}: '{line}'")
             
-            if line.startswith('{') and len(line) > 1:
-                try:
-                    # 入れ子のn番カッコをチェック
-                    if current_volta is not None:
-                        raise ParseError("Nested volta brackets are not allowed", self.current_line)
-                    current_volta = int(line[1:])
-                    content = []
-                    self.debug_print(f"Found volta start: {current_volta}")
-                except ValueError:
-                    # 通常の繰り返し記号の場合
-                    result.append(line)
-            elif line.endswith('}'):
-                try:
-                    number = int(line[:-1])
-                    if current_volta is None:
-                        # n番カッコの外での終了括弧
-                        result.append(line)
-                    elif number == current_volta:
-                        normalized = f"{{{current_volta} {' '.join(content)} }}{current_volta}"
-                        self.debug_print(f"Normalized volta: {normalized}")
-                        result.append(normalized)
-                        current_volta = None
+            # 繰り返し開始を検出
+            if line == '{':
+                self.debug_print(f"Found repeat start at line {i+1}")
+                in_repeat = True
+                
+                # 次の行があるか確認
+                if i + 1 < len(lines):
+                    next_line = lines[i + 1].strip()
+                    
+                    # 次の行が閉じ括弧の場合は空の繰り返し
+                    if next_line == '}':
+                        self.debug_print(f"Empty repeat bracket detected at lines {i+1}-{i+2}")
+                        raise ParseError("Empty repeat bracket", i + 1)
+                    
+                    # n番カッコでない場合は内容と結合
+                    if not (next_line.startswith('{') and len(next_line) > 1 and next_line[1].isdigit()):
+                        result.append(f"{{ {next_line}")
+                        i += 2
+                        continue
                     else:
-                        # 番号が一致しない場合はエラー
-                        raise ParseError("Mismatched volta bracket numbers", self.current_line)
+                        result.append("{ ")
+                        i += 1
+                        continue
+                else:
+                    # 次の行がない場合は閉じられていない繰り返し
+                    raise ParseError("Unclosed repeat bracket", i + 1)
+            
+            # 繰り返し終了を処理
+            if line == '}':
+                self.debug_print(f"Found repeat end at line {i+1}")
+                in_repeat = False
+                # 最後の行の場合、前の行に追加
+                if result:
+                    result[-1] = result[-1] + " }"
+                i += 1
+                continue
+            
+            # n番カッコの開始を検出
+            if line.startswith('{') and len(line) > 1 and line[1].isdigit():
+                try:
+                    volta_number = int(line[1])
+                    self.debug_print(f"Found volta start: {volta_number}")
+                    
+                    # n番カッコの入れ子をチェック
+                    if current_volta is not None:
+                        # 既にn番カッコ内にいる場合は入れ子のn番カッコとなるためエラー
+                        raise ParseError("Nested volta brackets are not allowed", i + 1)
+                    
+                    current_volta = volta_number
+                    volta_stack.append(volta_number)  # スタックに追加
+                    
+                    # 複数行にまたがるn番カッコを処理
+                    j = i + 1
+                    volta_content = []
+                    found_end = False
+                    
+                    while j < len(lines):
+                        volta_line = lines[j].strip()
+                        
+                        # n番カッコの終了を検出（1}形式）
+                        if volta_line.startswith(f"{volta_number}}}") or volta_line == f"{volta_number}":
+                            found_end = True
+                            break
+                        
+                        # n番カッコの終了を検出（}1形式）
+                        if volta_line.startswith(f"}}") and len(volta_line) > 1 and volta_line[1].isdigit():
+                            end_number = int(volta_line[1])
+                            if end_number != volta_number:
+                                # 番号不一致エラー
+                                raise ParseError("Mismatched volta bracket numbers", j + 1)
+                            found_end = True
+                            break
+                        
+                        # 他の形式のn番カッコ終了を検出
+                        if len(volta_line) > 0 and volta_line[0].isdigit() and volta_line[1:] == "}":
+                            end_number = int(volta_line[0])
+                            if end_number != volta_number:
+                                # 番号不一致エラー
+                                raise ParseError("Mismatched volta bracket numbers", j + 1)
+                            found_end = True
+                            break
+                        
+                        volta_content.append(volta_line)
+                        j += 1
+                    
+                    # 閉じられていないn番カッコをチェック
+                    if not found_end:
+                        raise ParseError("Unclosed volta bracket", i + 1)
+                    
+                    # 各行を個別のn番カッコとして処理
+                    for k, content_line in enumerate(volta_content):
+                        result.append(f"{{{volta_number} {content_line} }}{volta_number}")
+                    
+                    # n番カッコの終了行をスキップ
+                    i = j + 1
+                    current_volta = None
+                    volta_stack.pop()  # スタックから削除
+                    continue
                 except ValueError:
-                    # 通常の繰り返し記号の終了の場合
                     result.append(line)
-            elif current_volta is not None and line:
+                    i += 1
+                    continue
+            
+            # n番カッコの終了を検出 (1} 形式 - 生データ形式)
+            if len(line) > 0 and line[0].isdigit() and (line[1:] == "}" or line == f"{line[0]}"):
+                try:
+                    number = int(line[0])
+                    self.debug_print(f"Found volta end (original format): {number}")
+                    if number != current_volta:
+                        raise ParseError("Mismatched volta bracket numbers", i + 1)
+                    if not content:
+                        raise ParseError("Empty volta bracket", i + 1)
+                    
+                    # 正規化された形式に変換
+                    normalized = f"{{{current_volta} {' '.join(content)} }}{current_volta}"
+                    result.append(normalized)
+                    current_volta = None
+                    volta_stack.pop()  # スタックから削除
+                    i += 1
+                    continue
+                except ValueError:
+                    result.append(line)
+                    i += 1
+                    continue
+            
+            # n番カッコの終了を検出 (}1 形式 - 正規化済み形式)
+            if line.startswith('}') and len(line) > 1 and line[1].isdigit():
+                try:
+                    number = int(line[1])
+                    self.debug_print(f"Found volta end (normalized format): {number}")
+                    if number != current_volta:
+                        raise ParseError("Mismatched volta bracket numbers", i + 1)
+                    if not content:
+                        raise ParseError("Empty volta bracket", i + 1)
+                    
+                    normalized = f"{{{current_volta} {' '.join(content)} }}{current_volta}"
+                    result.append(normalized)
+                    current_volta = None
+                    volta_stack.pop()  # スタックから削除
+                    i += 1
+                    continue
+                except ValueError:
+                    result.append(line)
+                    i += 1
+                    continue
+            
+            # 内容の収集
+            if current_volta is not None:
                 content.append(line)
-                self.debug_print(f"Added content: {line}")
             else:
                 result.append(line)
+            i += 1
         
-        # 閉じていないn番カッコがある場合はエラー
+        # 閉じられていないn番カッコをチェック
         if current_volta is not None:
-            raise ParseError("Unclosed volta bracket", self.current_line)
+            raise ParseError("Unclosed volta bracket", len(lines))
         
-        final_text = '\n'.join(result)
-        self.debug_print(f"Output text:\n{final_text}")
-        return final_text 
+        # 閉じられていない繰り返し記号をチェック
+        if in_repeat:
+            raise ParseError("Unclosed repeat bracket", len(lines))
+        
+        return '\n'.join(result)
 
-    def _duration_to_step(self, duration: str) -> int:
-        """音価をステップ数に変換（4分音符=4ステップ）"""
-        base_duration = int(duration.rstrip('.'))
-        step = int(16 / base_duration)  # 16分音符=1ステップ
-        if duration.endswith('.'):
-            step += step // 2  # 付点の場合は1.5倍
-        return step 
+    def _parse_bar_line(self, line: str) -> Bar:
+        """小節の内容を解析して小節オブジェクトを返す"""
+        self.debug_print(f"\n=== _parse_bar_line ===")
+        self.debug_print(f"Input: {line}")
+        
+        bar = Bar()
+        tokens = self._tokenize_bar_line(line)
+        self.debug_print(f"Tokens: {tokens}")
+        
+        current_chord = None
+        current_string = self.last_string
+        chord_applied = False  # コードが適用されたかのフラグ
+        
+        for token in tokens:
+            # コード名の処理
+            if token.startswith('@'):
+                current_chord = token[1:]  # @を除去
+                bar.chord = current_chord  # 小節のコードも設定
+                chord_applied = False  # 新しいコードはまだ適用されていない
+                continue
+            
+            # 休符の処理
+            if token.startswith('r'):
+                duration = token[1:]
+                note = Note(
+                    string=0,  # 休符は弦番号0
+                    fret="R",  # 休符はR
+                    duration=duration,
+                    chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
+                    is_rest=True
+                )
+                bar.notes.append(note)
+                self.last_duration = duration
+                chord_applied = True  # コードが適用された
+                continue
+            
+            # 上移動記号
+            if token.startswith('u'):
+                try:
+                    fret = token[1:]
+                    if ':' in fret:
+                        fret, duration = fret.split(':')
+                        self.last_duration = duration
+                    else:
+                        duration = self.last_duration
+                    
+                    current_string -= 1  # 弦を上に移動
+                    note = Note(
+                        string=current_string,
+                        fret=fret,
+                        duration=duration,
+                        chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
+                        is_up_move=True
+                    )
+                    bar.notes.append(note)
+                    self.last_string = current_string
+                    chord_applied = True  # コードが適用された
+                    continue
+                except Exception as e:
+                    raise ParseError(f"Invalid up move: {token}", self.current_line)
+            
+            # 下移動記号
+            if token.startswith('d'):
+                try:
+                    fret = token[1:]
+                    if ':' in fret:
+                        fret, duration = fret.split(':')
+                        self.last_duration = duration
+                    else:
+                        duration = self.last_duration
+                    
+                    current_string += 1  # 弦を下に移動
+                    note = Note(
+                        string=current_string,
+                        fret=fret,
+                        duration=duration,
+                        chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
+                        is_down_move=True
+                    )
+                    bar.notes.append(note)
+                    self.last_string = current_string
+                    chord_applied = True  # コードが適用された
+                    continue
+                except Exception as e:
+                    raise ParseError(f"Invalid down move: {token}", self.current_line)
+            
+            # 和音の処理
+            if token.startswith('(') and ')' in token:
+                chord_part = token[1:token.index(')')]
+                duration_part = token[token.index(')')+1:]
+                
+                # 音価の抽出
+                duration = self.last_duration
+                if duration_part.startswith(':'):
+                    duration = duration_part[1:]
+                    self.last_duration = duration
+                
+                # 和音の音符を作成
+                chord_notes = []
+                for i, chord_note in enumerate(chord_part.split()):
+                    parts = chord_note.split('-')
+                    if len(parts) != 2:
+                        raise ParseError(f"Invalid chord note format: {chord_note}", self.current_line)
+                    
+                    string = int(parts[0])
+                    fret = parts[1]
+                    
+                    note = Note(
+                        string=string,
+                        fret=fret,
+                        duration=duration,
+                        chord=current_chord if not chord_applied else None,  # コードが未適用なら適用
+                        is_chord=True
+                    )
+                    chord_notes.append(note)
+                
+                # 和音の最初の音符をメインとして追加
+                if chord_notes:
+                    main_note = chord_notes[0]
+                    main_note.is_chord_start = True
+                    main_note.chord_notes = chord_notes[1:]
+                    bar.notes.append(main_note)
+                    chord_applied = True  # コードが適用された
+                
+                continue
+            
+            # 通常の音符
+            note = self._parse_note(token, self.last_duration, current_chord if not chord_applied else None)
+            bar.notes.append(note)
+            current_string = note.string
+            chord_applied = True  # コードが適用された
+        
+        # ステップ数の計算
+        self._calculate_steps(bar)
+        
+        return bar
+
+    def _tokenize_bar_line(self, line: str) -> List[str]:
+        """小節の内容をトークンに分割"""
+        tokens = []
+        current_token = ""
+        in_chord = False
+        
+        for char in line:
+            if char.isspace() and not in_chord:
+                if current_token:
+                    tokens.append(current_token)
+                    current_token = ""
+                continue
+            
+            if char == '(':
+                in_chord = True
+            elif char == ')':
+                in_chord = False
+            
+            current_token += char
+        
+        if current_token:
+            tokens.append(current_token)
+        
+        return tokens
+
+    def _calculate_steps(self, bar: Bar) -> None:
+        """音符のステップ数を計算"""
+        for note in bar.notes:
+            duration = note.duration
+            
+            # 基本ステップ数の計算
+            if duration == "1":  # 全音符
+                note.step = 16
+            elif duration == "2":  # 2分音符
+                note.step = 8
+            elif duration == "4":  # 4分音符
+                note.step = 4
+            elif duration == "8":  # 8分音符
+                note.step = 2
+            elif duration == "16":  # 16分音符
+                note.step = 1
+            elif duration == "32":  # 32分音符
+                note.step = 0.5
+            
+            # 付点音符の処理
+            if duration.endswith('.'):
+                base_duration = duration[:-1]
+                if base_duration == "4":  # 付点4分音符
+                    note.step = 6  # 4 + 2
+                elif base_duration == "8":  # 付点8分音符
+                    note.step = 3  # 2 + 1
+                elif base_duration == "16":  # 付点16分音符
+                    note.step = 1.5  # 1 + 0.5
+
+    def _validate_bar_duration(self, bar: Bar) -> bool:
+        """小節の長さを検証
+        
+        Args:
+            bar: 検証する小節
+            
+        Returns:
+            検証結果（True: 有効、False: 無効）
+            
+        Raises:
+            ParseError: 小節の長さが不正な場合
+        """
+        self.debug_print(f"Validating bar duration", level=3)
+        
+        # 検証をスキップする場合
+        if self.skip_validation:
+            return True
+        
+        # 拍子記号から期待される小節の長さを計算
+        beat = self.score.beat
+        numerator, denominator = map(int, beat.split('/'))
+        expected_duration = Fraction(numerator, 1)
+        
+        # 小節内の音符の長さを合計
+        total_duration = Fraction(0, 1)
+        for note in bar.notes:
+            duration = note.duration
+            # 付点の処理
+            if duration.endswith('.'):
+                base_duration = duration[:-1]
+                # 音符の長さを計算（全音符=1, 2分音符=1/2, 4分音符=1/4, ...）
+                base_value = Fraction(1, int(base_duration)) if base_duration != "1" else Fraction(1, 1)
+                note_duration = base_value * Fraction(3, 2)
+            else:
+                # 音符の長さを計算（全音符=1, 2分音符=1/2, 4分音符=1/4, ...）
+                note_duration = Fraction(1, int(duration)) if duration != "1" else Fraction(1, 1)
+            
+            total_duration += note_duration
+        
+        # 4/4拍子の場合、全音符は1.0、4分音符は0.25として計算される
+        # 4/4拍子では、全音符1つまたは4分音符4つで合計1.0になる
+        # これを拍子記号の分子（4）に合わせて調整
+        total_duration = total_duration * numerator
+        
+        self.debug_print(f"Total duration: {total_duration}, Expected: {expected_duration}", level=3)
+        
+        # 許容誤差（小さな丸め誤差を許容）
+        epsilon = Fraction(1, 1000)
+        
+        # 長さの検証
+        if total_duration > expected_duration + epsilon:
+            raise ParseError(f"Bar duration exceeds {beat}: {total_duration}", self.current_line)
+        elif total_duration < expected_duration - epsilon and len(bar.notes) > 0:
+            # 音符がある場合のみ長さ不足をチェック
+            raise ParseError(f"Bar duration is less than {beat}: {total_duration}", self.current_line)
+        
+        return True
+
+    def _validate_fret_number(self, fret: str) -> bool:
+        """フレット番号の検証
+        
+        Args:
+            fret: 検証するフレット番号
+            
+        Returns:
+            検証結果（True: 有効、False: 無効）
+            
+        Raises:
+            ParseError: 無効なフレット番号の場合
+        """
+        self.debug_print(f"Validating fret number: {fret}", level=3)
+        
+        # 検証をスキップする場合
+        if self.skip_validation:
+            return True
+        
+        # ミュート記号は有効
+        if fret == "x":
+            return True
+        
+        try:
+            fret_num = int(fret)
+            if fret_num < 0 or fret_num > 24:
+                raise ParseError(f"Invalid fret number: {fret} (must be between 0-24 or 'x')", self.current_line)
+            return True
+        except ValueError:
+            raise ParseError(f"Invalid fret number: {fret} (must be a number, 'x', or empty)", self.current_line)
+
+    def _validate_duration(self, duration: str) -> bool:
+        """音価の検証
+        
+        Args:
+            duration: 検証する音価
+            
+        Returns:
+            検証結果（True: 有効、False: 無効）
+            
+        Raises:
+            ParseError: 無効な音価の場合
+        """
+        self.debug_print(f"Validating duration: {duration}", level=3)
+        
+        # 検証をスキップする場合
+        if self.skip_validation:
+            return True
+        
+        # 付点の処理
+        has_dot = duration.endswith('.')
+        if has_dot:
+            base_duration = duration[:-1]
+        else:
+            base_duration = duration
+        
+        # 有効な音価のリスト
+        valid_durations = ["1", "2", "4", "8", "16", "32", "64"]
+        
+        if base_duration not in valid_durations:
+            raise ParseError(f"Invalid duration: {duration}", self.current_line)
+        
+        return True
+
+    def _validate_beat(self, beat: str) -> bool:
+        """拍子記号の検証
+        
+        Args:
+            beat: 検証する拍子記号
+            
+        Returns:
+            検証結果（True: 有効、False: 無効）
+            
+        Raises:
+            ParseError: 無効な拍子記号の場合
+        """
+        self.debug_print(f"Validating beat: {beat}", level=3)
+        
+        # 検証をスキップする場合
+        if self.skip_validation:
+            return True
+        
+        # 拍子記号の形式チェック
+        if '/' not in beat:
+            raise ParseError(f"Invalid beat: {beat} (must be in format 'n/m')", self.current_line)
+        
+        try:
+            numerator, denominator = beat.split('/')
+            num = int(numerator)
+            denom = int(denominator)
+            
+            if num <= 0 or denom <= 0:
+                raise ParseError(f"Invalid beat: {beat} (numerator and denominator must be positive)", self.current_line)
+            
+            # 分母は2のべき乗であるべき
+            valid_denominators = [1, 2, 4, 8, 16, 32, 64]
+            if denom not in valid_denominators:
+                raise ParseError(f"Invalid beat: {beat} (denominator must be a power of 2)", self.current_line)
+            
+            return True
+        except ValueError:
+            raise ParseError(f"Invalid beat: {beat} (must contain valid numbers)", self.current_line)
+
+    def _validate_tuning(self, tuning: str) -> bool:
+        """チューニングの検証
+        
+        Args:
+            tuning: 検証するチューニング
+            
+        Returns:
+            検証結果（True: 有効、False: 無効）
+            
+        Raises:
+            ParseError: 無効なチューニングの場合
+        """
+        self.debug_print(f"Validating tuning: {tuning}", level=3)
+        
+        # 検証をスキップする場合
+        if self.skip_validation:
+            return True
+        
+        # 有効なチューニングのリスト
+        valid_tunings = [
+            "guitar", "bass", "ukulele",  # 標準チューニング
+            "guitar7", "bass5"  # 拡張チューニング
+        ]
+        
+        if tuning not in valid_tunings:
+            raise ParseError(f"Invalid tuning: {tuning}", self.current_line)
+        
+        return True

@@ -3,25 +3,27 @@ from tabscript.parser import Parser
 from tabscript.exceptions import ParseError
 from tabscript.models import Score
 
-def test_basic_note_parsing():
+def test_basic_note_parsing(debug_level):
     """基本的な音符のパースをテスト"""
-    parser = Parser()
-    parser.score = Score(title="", tuning="guitar", beat="4/4")  # スコアを初期化
-    bar = parser._parse_bar_line("3-3:4 4-4:8 5-5:16")
+    parser = Parser(debug_mode=True, debug_level=debug_level)
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
     
-    assert len(bar.notes) == 3
-    # 1番目の音符
-    assert bar.notes[0].string == 3
-    assert bar.notes[0].fret == "3"
+    # 基本的な音符表記
+    bar = parser._parse_bar_line("1-0:4 2-2:8 3-3:16 4-4:32")
+    
+    assert len(bar.notes) == 4
+    assert bar.notes[0].string == 1
+    assert bar.notes[0].fret == "0"
     assert bar.notes[0].duration == "4"
-    assert bar.notes[0].step == 4
-    # 2番目の音符
-    assert bar.notes[1].string == 4
+    assert bar.notes[1].string == 2
+    assert bar.notes[1].fret == "2"
     assert bar.notes[1].duration == "8"
-    assert bar.notes[1].step == 2
-    # 3番目の音符
+    assert bar.notes[2].string == 3
+    assert bar.notes[2].fret == "3"
     assert bar.notes[2].duration == "16"
-    assert bar.notes[2].step == 1
+    assert bar.notes[3].string == 4
+    assert bar.notes[3].fret == "4"
+    assert bar.notes[3].duration == "32"
 
 def test_chord_parsing():
     """コード名のパースをテスト"""
@@ -128,6 +130,7 @@ def test_dotted_duration():
 def test_invalid_note_format():
     """不正な音符形式をテスト"""
     parser = Parser()
+    parser.score = Score(title="", tuning="guitar", beat="4/4")  # スコアを初期化
 
     with pytest.raises(ParseError, match="Invalid fret number"):
         parser._parse_bar_line("3-A:4")  # 不正なフレット番号（アルファベット）
@@ -298,37 +301,37 @@ def test_tie_slur_notation():
     assert bar.notes[2].connect_next
     assert not bar.notes[3].connect_next 
 
-def test_repeat_bar_parsing():
-    """繰り返し記号のパースをテスト"""
-    parser = Parser()
+def test_repeat_bar_parsing(debug_level):
+    """繰り返し記号のパースをテスト（前処理後の形式）"""
+    parser = Parser(debug_mode=True, debug_level=debug_level)
     parser.score = Score(title="", tuning="guitar", beat="4/4")
     
-    # 基本的な繰り返し
+    # 基本的な繰り返し（一行形式）
     bar_info = parser._analyze_section_bars([
-        "{ 1-1:4 2-2:4 }"  # 一行形式
+        "{ 1-1:4 2-2:4 }"  # 前処理済みの一行形式
     ])
     
     assert len(bar_info) == 1
-    assert bar_info[0].repeat_start == True
-    assert bar_info[0].repeat_end == True
+    assert bar_info[0].repeat_start
+    assert bar_info[0].repeat_end
     assert bar_info[0].content == "1-1:4 2-2:4"
 
-def test_volta_bracket_parsing():
-    """n番カッコのパースをテスト"""
-    parser = Parser()
+def test_volta_bracket_parsing(debug_level):
+    """n番カッコのパースをテスト（前処理後の形式）"""
+    parser = Parser(debug_mode=True, debug_level=debug_level)
     parser.score = Score(title="", tuning="guitar", beat="4/4")
     
-    # n番カッコの基本的なパース
+    # n番カッコの基本的なパース（一行形式）
     bar_info = parser._analyze_section_bars([
-        "{ 1-1:4 2-2:4 }",  # 繰り返し開始
+        "{ 1-1:4 2-2:4",  # 繰り返し開始と共通部分
         "{1 3-3:4 4-4:4 }1",  # 1番カッコ
-        "{2 5-5:4 6-6:4 }2"   # 2番カッコ
+        "{2 5-5:4 6-6:4 }2 }"  # 2番カッコと繰り返し終了
     ])
     
-    assert len(bar_info) == 3
-    # 繰り返しの検証
+    assert len(bar_info) == 3  # 共通部分1小節 + 1番1小節 + 2番1小節
+    # 共通部分の検証
     assert bar_info[0].repeat_start == True
-    assert bar_info[0].repeat_end == True
+    assert not bar_info[0].repeat_end
     # 1番カッコの検証
     assert bar_info[1].volta_number == 1
     assert bar_info[1].volta_start == True
@@ -337,23 +340,24 @@ def test_volta_bracket_parsing():
     assert bar_info[2].volta_number == 2
     assert bar_info[2].volta_start == True
     assert bar_info[2].volta_end == True
+    assert bar_info[2].repeat_end == True
 
-def test_multi_bar_volta_bracket_parsing():
-    """複数小節に渡るn番カッコのパースをテスト"""
-    parser = Parser()
+def test_multi_bar_volta_bracket_parsing(debug_level):
+    """複数小節に渡るn番カッコのパースをテスト（前処理後の形式）"""
+    parser = Parser(debug_mode=True, debug_level=debug_level)
     parser.score = Score(title="", tuning="guitar", beat="4/4")
     
-    # 複数小節のn番カッコ
+    # 複数小節のn番カッコ（一行形式）
     bar_info = parser._analyze_section_bars([
-        "{ 1-1:4 2-2:4 }",  # 繰り返し開始
+        "{ 1-1:4 2-2:4",  # 繰り返し開始と共通部分
         "{1 3-3:4 4-4:4 5-5:4 6-6:4 }1",  # 1番カッコ（2小節分）
-        "{2 7-7:4 8-8:4 9-9:4 10-10:4 }2"  # 2番カッコ（2小節分）
+        "{2 7-7:4 8-8:4 9-9:4 10-10:4 }2 }"  # 2番カッコ（2小節分）と繰り返し終了
     ])
     
     assert len(bar_info) == 3
-    # 繰り返しの検証
+    # 共通部分の検証
     assert bar_info[0].repeat_start == True
-    assert bar_info[0].repeat_end == True
+    assert not bar_info[0].repeat_end
     # 1番カッコの検証
     assert bar_info[1].volta_number == 1
     assert bar_info[1].volta_start == True
@@ -361,4 +365,5 @@ def test_multi_bar_volta_bracket_parsing():
     # 2番カッコの検証
     assert bar_info[2].volta_number == 2
     assert bar_info[2].volta_start == True
-    assert bar_info[2].volta_end == True 
+    assert bar_info[2].volta_end == True
+    assert bar_info[2].repeat_end == True 

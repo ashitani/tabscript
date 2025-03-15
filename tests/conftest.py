@@ -1,12 +1,18 @@
 import pytest
 
 def pytest_addoption(parser):
+    """pytestのコマンドラインオプションを追加"""
     parser.addoption(
-        "--show-debug",
-        action="store_true",
-        default=False,
-        help="enable debug output for failed tests"
+        "--debug-level",
+        action="store",
+        default="0",
+        help="デバッグレベルを指定: 0=無効, 1=基本, 2=詳細, 3=全情報"
     )
+
+@pytest.fixture
+def debug_level(request):
+    """デバッグレベルを取得するフィクスチャ"""
+    return int(request.config.getoption("--debug-level"))
 
 @pytest.fixture
 def debug_on_failure(request):
