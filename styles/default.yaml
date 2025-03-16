@@ -1,0 +1,29 @@
+# 基本的な間隔
+string_spacing: 3
+section_spacing: 5
+
+# 縦方向のマージン
+title_margin_bottom: 5
+metadata_margin_bottom: 5
+section_name_margin_bottom: 8
+
+# 相対位置
+chord_offset: 2.5
+volta_bracket_offset: 10
+volta_number_offset: 3.2
+repeat_dot_offset: 3
+
+# 行の高さ
+normal_row_height: 22
+volta_row_height: 35
+
+# 線の太さ
+normal_line_width: 1.0
+repeat_line_width: 2.5
+volta_line_width: 1.0
+
+# その他の設定
+repeat_dot_size: 0.25
+repeat_line_spacing: 1.2
+volta_margin: 0.5
+string_bottom_margin: 1 

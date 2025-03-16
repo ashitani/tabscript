@@ -1232,11 +1232,30 @@ class Parser:
                 if i == len(content) - 1 or (i + 1 < len(content) and content[i + 1].strip() == '}'):
                     is_repeat_end = True
                 
+                # 連続するn番カッコを検出
+                is_volta_start = True
+                is_volta_end = True
+                
+                # 前の小節がn番カッコかチェック
+                if i > 0 and len(bar_infos) > 0:
+                    prev_bar = bar_infos[-1]
+                    if prev_bar.volta_number == volta_number:
+                        # 同じ番号のn番カッコが続いている場合
+                        is_volta_start = False
+                
+                # 次の小節がn番カッコかチェック
+                if i + 1 < len(content):
+                    next_line = content[i + 1].strip()
+                    next_volta_match = re.match(r'\{(\d+) (.*) \}\d+', next_line)
+                    if next_volta_match and int(next_volta_match.group(1)) == volta_number:
+                        # 同じ番号のn番カッコが続く場合
+                        is_volta_end = False
+                
                 bar_info = BarInfo(
                     content=bar_content,
                     volta_number=volta_number,
-                    volta_start=True,
-                    volta_end=True,
+                    volta_start=is_volta_start,
+                    volta_end=is_volta_end,
                     repeat_end=is_repeat_end
                 )
                 bar_infos.append(bar_info)

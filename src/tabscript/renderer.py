@@ -6,14 +6,16 @@ from reportlab.lib.units import mm
 from .models import Score, Section, Bar, Note
 from .exceptions import TabScriptError
 from typing import List, Tuple
+from .style import StyleManager
 
 class Renderer:
-    def __init__(self, score: Score, debug_mode: bool = False):
+    def __init__(self, score: Score, debug_mode: bool = False, style_file=None):
         """レンダラーを初期化
         
         Args:
             score: 描画対象のスコア
             debug_mode: デバッグモードフラグ
+            style_file: スタイル設定ファイルのパス
         """
         self.score = score
         self.canvas = None
@@ -21,11 +23,12 @@ class Renderer:
         self.current_y = 0
         self.debug_mode = debug_mode
         
+        # スタイルマネージャーを初期化
+        self.style_manager = StyleManager(style_file)
+        
         # レイアウト設定
         self.margin = 5 * mm
         self.margin_bottom = 20 * mm  # 追加：下マージン
-        self.string_spacing = 3 * mm
-        self.section_spacing = 5 * mm  # 10mmから5mmに変更
         
         # A4縦向きのサイズ設定
         self.page_width = A4[0]
@@ -68,7 +71,7 @@ class Renderer:
             if section.name:
                 self.canvas.setFont("Helvetica-Bold", 12)
                 self.canvas.drawString(self.margin, y, f"[{section.name}]")
-                y -= 8 * mm
+                y -= self.style_manager.get("section_name_margin_bottom")
             
             # 各行を描画
             for i, column in enumerate(section.columns):
@@ -79,11 +82,24 @@ class Renderer:
                     if len(last_bar.notes) > 0 and last_bar.notes[-1].connect_next:
                         has_previous_connection = True
                 
+                # n番カッコを含むかチェック
+                has_volta = any(bar.volta_number is not None for bar in column.bars)
+                
                 # 小節グループを描画（接続情報を渡す）
                 self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
-                y -= 22 * mm
+                
+                # n番カッコを含む場合は縦間隔を広げる
+                if has_volta:
+                    y -= self.style_manager.get("volta_row_height")  # ボルタブラケットを含む行の高さ
+                else:
+                    y -= self.style_manager.get("normal_row_height")  # 通常の行の高さ
+                
+                # 新しいページが必要かチェック
+                if y < self.margin_bottom:
+                    self.canvas.showPage()
+                    y = self.page_height - self.margin - 5 * mm
             
-            y -= self.section_spacing + 2 * mm  # セクション間の間隔を2mm広く
+            y -= self.style_manager.get("section_spacing")  # セクション間の間隔
             
             # 新しいページが必要かチェック
             if y < self.margin_bottom:
@@ -98,7 +114,7 @@ class Renderer:
         title_width = self.canvas.stringWidth(self.score.title, "Helvetica-Bold", 16)
         x = (self.page_width - title_width) / 2  # センタリングのためのX座標を計算
         self.canvas.drawString(x, y, self.score.title)
-        self.current_y -= 5 * mm  # タイトル後の間隔を5mmに縮小
+        self.current_y -= self.style_manager.get("title_margin_bottom")  # スタイルシートから値を取得
 
     def draw_metadata(self, y: float):
         """メタデータを描画"""
@@ -115,7 +131,7 @@ class Renderer:
         total_steps = sum(self._duration_to_steps(note.duration, resolution) for note in bar.notes)
         
         # 各弦の位置を計算
-        y_positions = [self.current_y - (i * self.string_spacing) for i in range(string_count)]
+        y_positions = [self.current_y - (i * self.style_manager.get("string_spacing")) for i in range(string_count)]
         
         # 小節を描画
         current_x = self.margin
@@ -354,7 +370,8 @@ class Renderer:
         self.canvas.setFont("Helvetica", 10)
         text_width = self.canvas.stringWidth(chord, "Helvetica", 10)
         text_height = 10
-        self.canvas.drawString(x + 1 * mm, y + 2 * mm, chord) 
+        # コードと1弦の間隔を調整（スタイルシートから値を取得）
+        self.canvas.drawString(x + 1 * mm, y + self.style_manager.get("chord_offset"), chord)
 
     def _render_bar_group_pdf(self, bars: List[Bar], bars_per_line: int, y: float, has_previous_connection: bool = False):
         """小節グループを描画"""
@@ -371,7 +388,7 @@ class Renderer:
                 self.debug_print(f"    step: {note.step}")  # パース時に計算済み！
 
         string_count = self._get_string_count()
-        bar_margin = 1.5 * mm  # 小節の前後のマージン
+        bar_margin = 1.5 * mm
         
         # 小節グループの幅を計算
         if bars_per_line == 1:
@@ -381,27 +398,85 @@ class Renderer:
             group_width = self.usable_width / bars_per_line * len(bars)
             bar_width = group_width / len(bars)
         
-        # 各弦の位置を計算（current_yの代わりにyを使用）
-        y_positions = [y - (i * self.string_spacing) for i in range(string_count)]
+        # 各弦の位置を計算
+        y_positions = [y - (i * self.style_manager.get("string_spacing")) for i in range(string_count)]
         
         # 小節を順に描画
         current_x = self.margin
+        
         for bar_index, bar in enumerate(bars):
             # 小節内の総ステップ数を計算（パース時の値を使用）
             total_steps = sum(note.step for note in bar.notes)
             self.debug_print(f"  total_steps: {total_steps}")
             
             # このステップ幅で描画（前後の余白を考慮）
-            usable_width = bar_width - (2 * bar_margin)  # 前後のマージンを引く
+            # 繰り返し記号のためのマージンを追加（左右に2mm）
+            repeat_margin = 2.0 * mm if bar.is_repeat_start or bar.is_repeat_end else 0
+            usable_width = bar_width - (2 * bar_margin) - repeat_margin
             step_width = usable_width / total_steps
             
             # 縦線と横線を描画
-            self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
+            # 繰り返し開始記号の描画
+            if bar.is_repeat_start:
+                # 太線を描画（太さを2.5mmに変更）
+                self.canvas.setLineWidth(self.style_manager.get("repeat_line_width"))
+                self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
+                self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))  # 線の太さを元に戻す
+                
+                # 細線を描画（太線の右側、間隔を1.2mmに変更）
+                self.canvas.line(current_x + self.style_manager.get("repeat_line_spacing"), y_positions[0], current_x + self.style_manager.get("repeat_line_spacing"), y_positions[-1])
+                
+                # ドットを描画（サイズを0.25mmに変更）
+                dot_y = (y_positions[0] + y_positions[-1]) / 2
+                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y + self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
+                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y - self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
+                
+                # 音符の開始位置を右にずらす
+                note_x = current_x + bar_margin + repeat_margin
+            else:
+                # 通常の縦線
+                self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
+                note_x = current_x + bar_margin
+            
+            # ボルタブラケット（n番カッコ）の描画
+            if bar.volta_number is not None:
+                # 1弦より上に描画するための位置調整（コードとの間隔を広げる）
+                bracket_y = y_positions[0] + self.style_manager.get("volta_bracket_offset")
+                
+                # 横線を描画（volta_startまたはvolta_endの時だけ）
+                if bar.volta_start or bar.volta_end:
+                    self.canvas.setLineWidth(self.style_manager.get("volta_line_width"))
+                    # 上線の左右端を小節境界からマージン分離す
+                    left_x = current_x + self.style_manager.get("volta_margin")
+                    right_x = current_x + bar_width - self.style_manager.get("volta_margin")
+                    self.canvas.line(left_x, bracket_y, right_x, bracket_y)
+                    self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+                
+                # 左線と数字を描画（volta_startの時だけ）
+                if bar.volta_start:
+                    self.canvas.setLineWidth(self.style_manager.get("volta_line_width"))
+                    # 左線を小節頭よりマージン分右に、下端は1弦にかぶらないように
+                    left_x = current_x + self.style_manager.get("volta_margin")
+                    self.canvas.line(left_x, bracket_y, left_x, y_positions[0] + self.style_manager.get("string_bottom_margin"))
+                    self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+                    
+                    # 数字を描画（ピリオド付き）
+                    self.canvas.setFont("Helvetica-Bold", 10)
+                    self.canvas.drawString(left_x + 2 * mm, bracket_y - self.style_manager.get("volta_number_offset"), f"{bar.volta_number}.")
+                
+                # 右線を描画（volta_endの時だけ）
+                if bar.volta_end:
+                    self.canvas.setLineWidth(self.style_manager.get("volta_line_width"))
+                    # 右線を小節終わりよりマージン分左に、下端は1弦にかぶらないように
+                    right_x = current_x + bar_width - self.style_manager.get("volta_margin")
+                    self.canvas.line(right_x, bracket_y, right_x, y_positions[0] + self.style_manager.get("string_bottom_margin"))
+                    self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+            
+            # 横線を描画
             for y in y_positions:
                 self.canvas.line(current_x, y, current_x + bar_width, y)
             
             # 音符を配置（開始マージンから開始）
-            note_x = current_x + bar_margin
             last_chord = None  # 前回描画したコード名を記録
             for note in bar.notes:
                 # パース時に計算済みのステップ数を使用
@@ -425,6 +500,24 @@ class Renderer:
                         self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret)
                 
                 note_x += note_width
+            
+            # 繰り返し終了記号の描画
+            if bar.is_repeat_end:
+                # 細線を描画（太線の左側、間隔を1.2mmに変更）
+                self.canvas.line(current_x + bar_width - self.style_manager.get("repeat_line_spacing"), y_positions[0], current_x + bar_width - self.style_manager.get("repeat_line_spacing"), y_positions[-1])
+                
+                # 太線を描画（太さを2.5mmに変更）
+                self.canvas.setLineWidth(self.style_manager.get("repeat_line_width"))
+                self.canvas.line(current_x + bar_width, y_positions[0], current_x + bar_width, y_positions[-1])
+                self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))  # 線の太さを元に戻す
+                
+                # ドットを描画（サイズを0.25mmに変更）
+                dot_y = (y_positions[0] + y_positions[-1]) / 2
+                self.canvas.circle(current_x + bar_width - self.style_manager.get("repeat_dot_offset"), dot_y + self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
+                self.canvas.circle(current_x + bar_width - self.style_manager.get("repeat_dot_offset"), dot_y - self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
+            else:
+                # 通常の終了縦線
+                self.canvas.line(current_x + bar_width, y_positions[0], current_x + bar_width, y_positions[-1])
             
             current_x += bar_width
         
