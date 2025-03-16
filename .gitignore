@@ -36,20 +36,21 @@ ENV/
 *.swo
 
 # Project specific
-*.pdf
-*.txt
 !README.md
 !requirements.txt
+!docs/*.txt
 
 # OS
 .DS_Store
 Thumbs.db 
 
 # personal tab files
-tabs/
+tabs_private/
 
 # Keep sample files
-!samples/*.tab
+tabs/*.pdf
+tabs/*.txt
+!tabs/*.tab
 
 # log
 pytestdebug.log

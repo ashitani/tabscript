@@ -426,10 +426,11 @@ class Renderer:
                 # 細線を描画（太線の右側、間隔を1.2mmに変更）
                 self.canvas.line(current_x + self.style_manager.get("repeat_line_spacing"), y_positions[0], current_x + self.style_manager.get("repeat_line_spacing"), y_positions[-1])
                 
-                # ドットを描画（サイズを0.25mmに変更）
+                # ドットを描画（間隔をさらに広げる）
                 dot_y = (y_positions[0] + y_positions[-1]) / 2
-                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y + self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
-                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y - self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
+                dot_spacing = 6.0 * mm  # ドット間の間隔を6mmに設定（2倍に広げる）
+                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y + dot_spacing/2, self.style_manager.get("repeat_dot_size"), fill=1)
+                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y - dot_spacing/2, self.style_manager.get("repeat_dot_size"), fill=1)
                 
                 # 音符の開始位置を右にずらす
                 note_x = current_x + bar_margin + repeat_margin
@@ -511,10 +512,11 @@ class Renderer:
                 self.canvas.line(current_x + bar_width, y_positions[0], current_x + bar_width, y_positions[-1])
                 self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))  # 線の太さを元に戻す
                 
-                # ドットを描画（サイズを0.25mmに変更）
+                # ドットを描画（間隔をさらに広げる）
                 dot_y = (y_positions[0] + y_positions[-1]) / 2
-                self.canvas.circle(current_x + bar_width - self.style_manager.get("repeat_dot_offset"), dot_y + self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
-                self.canvas.circle(current_x + bar_width - self.style_manager.get("repeat_dot_offset"), dot_y - self.style_manager.get("repeat_dot_size"), self.style_manager.get("repeat_dot_size"), fill=1)
+                dot_spacing = 6.0 * mm  # ドット間の間隔を6mmに設定（2倍に広げる）
+                self.canvas.circle(current_x + bar_width - self.style_manager.get("repeat_dot_offset"), dot_y + dot_spacing/2, self.style_manager.get("repeat_dot_size"), fill=1)
+                self.canvas.circle(current_x + bar_width - self.style_manager.get("repeat_dot_offset"), dot_y - dot_spacing/2, self.style_manager.get("repeat_dot_size"), fill=1)
             else:
                 # 通常の終了縦線
                 self.canvas.line(current_x + bar_width, y_positions[0], current_x + bar_width, y_positions[-1])
