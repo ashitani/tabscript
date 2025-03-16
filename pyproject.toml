@@ -1,23 +1,44 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "tabscript"
 version = "0.1.0"
 description = "A simple text-based guitar tablature format"
+authors = [
+    {name = "Tatsuji Ashitani", email = "tatsuji@ashitani.jp"},
+]
 readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
 dependencies = [
-    "reportlab>=3.6.8",
+    "reportlab<3.6.0",
+    "Pillow<9.0.0",
+]
+urls = {Homepage = "https://github.com/yourusername/tabscript"}
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.1.0",
 ]
 
 [project.scripts]
+tabscript = "tabscript.cli:main"
 tab2pdf = "tabscript.cli:main"
 tab2txt = "tabscript.cli:main"
 
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0.0",
-] 
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tabscript = ["*.ttf", "*.json"] 
