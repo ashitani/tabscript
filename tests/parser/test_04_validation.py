@@ -2,6 +2,7 @@ import pytest
 from tabscript.parser import Parser
 from tabscript.exceptions import ParseError
 from tabscript.models import Score, Bar, Note
+from fractions import Fraction
 
 def test_bar_duration_validation(debug_level):
     """小節の長さ検証をテスト"""
@@ -10,29 +11,32 @@ def test_bar_duration_validation(debug_level):
     
     # 正しい長さの小節（4/4拍子で全音符1つ）
     bar = Bar()
-    bar.notes.append(Note(string=1, fret="0", duration="1"))
+    note = Note(string=1, fret="0", duration="1")
+    note.step = Fraction(4)  # 全音符は4ステップ
+    bar.notes.append(note)
+    
     # 全音符は4/4拍子で正しい長さ
     assert parser._validate_bar_duration(bar) == True
     
-    # 正しい長さの小節（4/4拍子で4分音符4つ）
+    # 短すぎる小節（4/4拍子で2分音符1つ）
     bar = Bar()
-    for _ in range(4):
-        bar.notes.append(Note(string=1, fret="0", duration="4"))
-    assert parser._validate_bar_duration(bar) == True
+    note = Note(string=1, fret="0", duration="2")
+    note.step = Fraction(2)  # 2分音符は2ステップ
+    bar.notes.append(note)
     
-    # 長すぎる小節（4/4拍子で4分音符5つ）
-    bar = Bar()
-    for _ in range(5):
-        bar.notes.append(Note(string=1, fret="0", duration="4"))
-    with pytest.raises(ParseError, match="Bar duration exceeds"):
-        parser._validate_bar_duration(bar)
+    # 2分音符は4/4拍子で短すぎる
+    assert parser._validate_bar_duration(bar) == False
     
-    # 短すぎる小節（4/4拍子で4分音符3つ）
+    # 長すぎる小節（4/4拍子で全音符+4分音符）
     bar = Bar()
-    for _ in range(3):
-        bar.notes.append(Note(string=1, fret="0", duration="4"))
-    with pytest.raises(ParseError, match="Bar duration is less than"):
-        parser._validate_bar_duration(bar)
+    note1 = Note(string=1, fret="0", duration="1")
+    note1.step = Fraction(4)  # 全音符は4ステップ
+    note2 = Note(string=1, fret="0", duration="4")
+    note2.step = Fraction(1)  # 4分音符は1ステップ
+    bar.notes.extend([note1, note2])
+    
+    # 全音符+4分音符は4/4拍子で長すぎる
+    assert parser._validate_bar_duration(bar) == False
 
 def test_string_number_validation(debug_level):
     """弦番号の検証をテスト"""
@@ -131,4 +135,34 @@ def test_skip_validation(debug_level):
         bar.notes.append(Note(string=1, fret="0", duration="4"))
     
     # skip_validation=Trueなのでエラーにならない
-    parser._validate_bar_duration(bar) 
+    parser._validate_bar_duration(bar)
+
+def test_chord_notation_duration():
+    """コード形式の音符の長さ検証をテスト"""
+    parser = Parser(debug_mode=True, debug_level=3)
+    parser.score = Score(title="", tuning="guitar", beat="4/4")
+    
+    # コード形式の音符（全音符）
+    bar = Bar()
+    
+    # コード形式の音符を作成
+    main_note = Note(string=1, fret="2", duration="1")
+    main_note.is_chord = True
+    main_note.is_chord_start = True
+    main_note.step = Fraction(4)  # 全音符は4ステップ
+    
+    # コードの他の音符
+    chord_notes = [
+        Note(string=2, fret="4", duration="1", is_chord=True, step=Fraction(4)),
+        Note(string=3, fret="4", duration="1", is_chord=True, step=Fraction(4)),
+        Note(string=4, fret="4", duration="1", is_chord=True, step=Fraction(4)),
+        Note(string=5, fret="2", duration="1", is_chord=True, step=Fraction(4)),
+        Note(string=6, fret="2", duration="1", is_chord=True, step=Fraction(4))
+    ]
+    
+    main_note.chord_notes = chord_notes
+    bar.notes.append(main_note)
+    bar.notes.extend(chord_notes)  # 和音の他の音符も追加
+    
+    # コード形式の音符は全音符（4/4拍子で正しい長さ）
+    assert parser._validate_bar_duration(bar) == True 

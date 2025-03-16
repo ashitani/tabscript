@@ -402,13 +402,15 @@ class Renderer:
             
             # 音符を配置（開始マージンから開始）
             note_x = current_x + bar_margin
+            last_chord = None  # 前回描画したコード名を記録
             for note in bar.notes:
                 # パース時に計算済みのステップ数を使用
                 note_width = note.step * step_width
                 
-                # コードを描画
-                if note.chord:
+                # コードを描画（前回と同じコードは描画しない）
+                if note.chord and note.chord != last_chord:
                     self._draw_chord(note_x, y_positions[0], note.chord)
+                    last_chord = note.chord
                 
                 # 音符を描画
                 if not note.is_rest:

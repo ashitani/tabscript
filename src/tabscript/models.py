@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional
+from fractions import Fraction
 
 @dataclass
 class Note:
@@ -14,7 +15,7 @@ class Note:
     is_chord_start: bool = False  # 追加
     chord_notes: List['Note'] = None
     is_muted: bool = False
-    step: int = 0  # resolution単位での長さ
+    step: Fraction = Fraction(0)  # intからFractionに変更
     connect_next: bool = False  # スラー/タイ用のフラグ
 
     def __post_init__(self):
@@ -34,6 +35,8 @@ class Bar:
     is_repeat_start: bool = False
     is_repeat_end: bool = False
     volta_number: Optional[int] = None
+    volta_start: bool = False  # 追加
+    volta_end: bool = False    # 追加
 
     def __post_init__(self):
         if self.notes is None:
