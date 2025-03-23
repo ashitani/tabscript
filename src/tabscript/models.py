@@ -1,22 +1,23 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 from fractions import Fraction
 
 @dataclass
 class Note:
-    string: int
-    fret: str  # intからstrに変更（数値またはX）
-    duration: str
-    chord: Optional[str] = None  # コード名を追加
-    is_rest: bool = False
-    is_up_move: bool = False
-    is_down_move: bool = False
-    is_chord: bool = False
-    is_chord_start: bool = False  # 追加
-    chord_notes: List['Note'] = None
-    is_muted: bool = False
-    step: Fraction = Fraction(0)  # intからFractionに変更
-    connect_next: bool = False  # スラー/タイ用のフラグ
+    """音符"""
+    string: int  # 弦番号（1〜6）
+    fret: str    # フレット番号（0〜24、またはX）
+    duration: str  # 音価（4, 8, 16など）
+    step: Fraction = field(default_factory=lambda: Fraction(1, 1))  # 音符の長さ（拍数）
+    chord: Optional[str] = None  # コード名
+    is_rest: bool = False  # 休符かどうか
+    is_muted: bool = False  # ミュート音かどうか
+    is_up_move: bool = False  # 上方向への弦移動かどうか
+    is_down_move: bool = False  # 下方向への弦移動かどうか
+    connect_next: bool = False  # 次の音符と接続するかどうか
+    is_chord: bool = False  # コードの一部かどうか
+    is_chord_start: bool = False  # コードの最初の音符かどうか
+    chord_notes: List['Note'] = field(default_factory=list)  # コード内の他の音符への参照
 
     def __post_init__(self):
         if self.chord_notes is None:
@@ -28,15 +29,16 @@ class Note:
 
 @dataclass
 class Bar:
-    notes: List[Note] = None
-    chord: Optional[str] = None
-    resolution: int = 16
-    # 繰り返し関連のフィールドを追加
-    is_repeat_start: bool = False
-    is_repeat_end: bool = False
-    volta_number: Optional[int] = None
-    volta_start: bool = False  # 追加
-    volta_end: bool = False    # 追加
+    """小節"""
+    notes: List[Note] = field(default_factory=list)  # 音符のリスト
+    beat: str = "4/4"  # 拍子
+    resolution: int = 16  # 分解能
+    is_repeat_start: bool = False  # 繰り返し開始かどうか
+    is_repeat_end: bool = False  # 繰り返し終了かどうか
+    volta_number: Optional[int] = None  # n番カッコの番号
+    volta_start: bool = False  # n番カッコの開始かどうか
+    volta_end: bool = False  # n番カッコの終了かどうか
+    chord: Optional[str] = None  # コード名
 
     def __post_init__(self):
         if self.notes is None:
@@ -50,23 +52,35 @@ class Column:
 
 @dataclass
 class Section:
-    name: str
-    columns: List[Column] = None  # 行のリスト
-
-    def __post_init__(self):
-        if self.columns is None:
-            self.columns = []
+    """楽譜のセクション"""
+    
+    def __init__(self, name: str = ""):
+        self.name = name
+        self.columns = []
+        self._bars = []  # 内部用の属性
+    
+    def get_all_bars(self) -> List[Bar]:
+        """このセクションの全ての小節を返す（新しいコード用）"""
+        return [bar for column in self.columns for bar in column.bars]
     
     @property
     def bars(self) -> List[Bar]:
-        """このセクションの全ての小節を返す"""
-        return [bar for column in self.columns for bar in column.bars]
+        """互換性のためのプロパティ"""
+        if self._bars:
+            return self._bars
+        return self.get_all_bars()
+    
+    @bars.setter
+    def bars(self, value: List[Bar]):
+        """互換性のためのセッター"""
+        self._bars = value
 
 @dataclass
 class Score:
     title: str = ""
     tuning: str = "guitar"
     beat: str = "4/4"  # デフォルトは4/4拍子
+    bars_per_line: int = 4  # デフォルトは1行あたり4小節
     sections: List[Section] = None
 
     def __post_init__(self):
@@ -78,12 +92,59 @@ class Score:
         """全ての小節を返す"""
         return [bar for section in self.sections for bar in section.bars]
 
-@dataclass
-class BarInfo:
+class BarInfo(dict):
     """小節の構造情報"""
-    content: str
-    repeat_start: bool = False
-    repeat_end: bool = False
-    volta_number: Optional[int] = None
-    volta_start: bool = False  # n番カッコの開始
-    volta_end: bool = False    # n番カッコの終了 
+    def __init__(self, content, repeat_start=False, repeat_end=False, 
+                 volta_number=None, volta_start=False, volta_end=False):
+        super().__init__({
+            'content': content,
+            'repeat_start': repeat_start,
+            'repeat_end': repeat_end,
+            'volta_number': volta_number,
+            'volta_start': volta_start,
+            'volta_end': volta_end
+        })
+        
+    @property
+    def content(self):
+        return self['content']
+        
+    @property
+    def repeat_start(self):
+        return self['repeat_start']
+        
+    @repeat_start.setter
+    def repeat_start(self, value):
+        self['repeat_start'] = value
+        
+    @property
+    def repeat_end(self):
+        return self['repeat_end']
+        
+    @repeat_end.setter
+    def repeat_end(self, value):
+        self['repeat_end'] = value
+        
+    @property
+    def volta_number(self):
+        return self['volta_number']
+        
+    @volta_number.setter
+    def volta_number(self, value):
+        self['volta_number'] = value
+        
+    @property
+    def volta_start(self):
+        return self['volta_start']
+        
+    @volta_start.setter
+    def volta_start(self, value):
+        self['volta_start'] = value
+        
+    @property
+    def volta_end(self):
+        return self['volta_end']
+        
+    @volta_end.setter
+    def volta_end(self, value):
+        self['volta_end'] = value 
