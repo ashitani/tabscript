@@ -159,16 +159,16 @@ class Renderer:
                 if note.is_chord:
                     # 主音を描画
                     y = y_positions[note.string - 1]
-                    self._draw_fret_number(note_x, y, note.fret)
+                    self._draw_fret_number(note_x, y, note.fret, note.connect_next)
                     
                     # 和音の他の音を描画
                     for chord_note in note.chord_notes:
                         y = y_positions[chord_note.string - 1]
-                        self._draw_fret_number(note_x, y, chord_note.fret)
+                        self._draw_fret_number(note_x, y, chord_note.fret, chord_note.connect_next)
                 else:
                     # 通常の音符を描画
                     y = y_positions[note.string - 1]
-                    self._draw_fret_number(note_x, y, note.fret)
+                    self._draw_fret_number(note_x, y, note.fret, note.connect_next)
             
             note_x += note_steps * step_width
         
@@ -354,16 +354,25 @@ class Renderer:
         else:
             self.render_text(output_path) 
 
-    def _draw_fret_number(self, x: float, y: float, fret: str):
+    def _draw_fret_number(self, x: float, y: float, fret: str, connect_next: bool = False):
         """フレット番号を描画（ヘルパーメソッド）"""
         self.canvas.setFont("Helvetica", 10)
         fret_str = "X" if fret == "X" else str(fret)
+        
+        # デバッグ出力
+        self.debug_print(f"Drawing fret: {fret}, connect_next: {connect_next}")
+        
+        # 注意: 接続フラグがある場合でも&記号を表示しない（元の実装では表示していた）
+        # 黒丸も表示しない
+        
         text_width = self.canvas.stringWidth(fret_str, "Helvetica", 10)
         text_height = 10
         self.canvas.setFillColor('white')
         self.canvas.rect(x + 1 * mm, y - text_height/2, text_width + 1, text_height, fill=1, stroke=0)
         self.canvas.setFillColor('black')
         self.canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
+        
+        # 接続フラグがある場合の黒丸表示処理を削除
 
     def _draw_chord(self, x: float, y: float, chord: str):
         """コード名を描画（ヘルパーメソッド）"""
@@ -490,15 +499,21 @@ class Renderer:
                 
                 # 音符を描画
                 if not note.is_rest:
-                    if note.is_chord and note.is_chord_start:
-                        # 和音の最初の音符の場合、すべての音符を描画
-                        self.debug_print(f"Rendering chord with {len(note.chord_notes) + 1} notes")
-                        self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret)
+                    if note.is_chord:
+                        # 主音を描画
+                        y = y_positions[note.string - 1]
+                        self.debug_print(f"Drawing chord main note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
+                        self._draw_fret_number(note_x, y, note.fret, note.connect_next)
+                        
+                        # 和音の他の音を描画
                         for chord_note in note.chord_notes:
-                            self._draw_fret_number(note_x, y_positions[chord_note.string - 1], chord_note.fret)
+                            y = y_positions[chord_note.string - 1]
+                            self.debug_print(f"Drawing chord sub-note: string={chord_note.string}, fret={chord_note.fret}, connect_next={chord_note.connect_next}")
+                            self._draw_fret_number(note_x, y, chord_note.fret, chord_note.connect_next)
                     elif not note.is_chord:
                         # 通常の音符の場合
-                        self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret)
+                        self.debug_print(f"Drawing regular note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
+                        self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret, note.connect_next)
                 
                 note_x += note_width
             
@@ -547,19 +562,23 @@ class Renderer:
                     # 小節内の接続
                     if i < len(bar.notes) - 1:
                         next_note = bar.notes[i + 1]
-                        x2 = note_x + (note.step * step_width) + (step_width / 2) - 1 * mm
+                        # 次の音符の中央位置を計算（ステップ幅の半分を足し引きして調整）
+                        next_note_x = note_x + (note.step * step_width)
+                        # フレット番号の中央に調整
+                        x2 = next_note_x + 1.5 * mm  # 前の 1.5mm を補正
                         self._draw_slur(note_x, note, next_note, x2, y_positions)
                     # 小節をまたぐ接続
                     elif bar_index < len(bars) - 1:
                         if len(bars[bar_index + 1].notes) > 0:
                             next_note = bars[bar_index + 1].notes[0]
                             next_bar_x = bar_x + bar_width
+                            # 次の小節の最初の音符の中央に調整
                             x2 = next_bar_x + bar_margin + 1.5 * mm
                             self._draw_slur(note_x, note, next_note, x2, y_positions)
-                    elif bar_index == len(bars) - 1:  # 行末の場合
-                        # 左半分のスラーのみ描画
-                        x2 = bar_x + bar_width + 2 * mm
-                        self._draw_half_slur(note_x, note, x2, y_positions, "left")
+                        elif bar_index == len(bars) - 1:  # 行末の場合
+                            # 左半分のスラーのみ描画（終点位置を調整）
+                            x2 = bar_x + bar_width + 1 * mm  # 2mmから1mmに縮小して調整
+                            self._draw_half_slur(note_x, note, x2, y_positions, "left")
                 
                 note_x += note.step * step_width
         
@@ -568,8 +587,12 @@ class Renderer:
 
     def _draw_slur(self, note_x, note, next_note, x2, y_positions):
         """通常のスラーを描画"""
+        # スラーの開始位置を音符の中央に調整
         x1 = note_x + 1.5 * mm
         y1 = y_positions[note.string - 1] - 2 * mm
+        
+        # 終了位置を次の音符の中央に調整
+        # x2はすでに渡されているので再計算不要
         y2 = y_positions[next_note.string - 1] - 2 * mm
         
         # 2本の曲線で描画（より自然な見た目に）
@@ -598,23 +621,23 @@ class Renderer:
             # 左半分：始点から中央へ（2本の曲線）
             control_y = y - 3.2 * mm
             self.canvas.bezier(x1, y,
-                              x1 + (x2 - x1) * 0.25, control_y,
-                              x1 + (x2 - x1) * 0.5, control_y,
+                              x1 + (x2 - x1) * 0.3, control_y,  # 0.25から0.3に調整
+                              x1 + (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
                               x2, control_y)
             control_y = y - 2.8 * mm
             self.canvas.bezier(x1, y,
-                              x1 + (x2 - x1) * 0.25, control_y,
-                              x1 + (x2 - x1) * 0.5, control_y,
+                              x1 + (x2 - x1) * 0.3, control_y,  # 0.25から0.3に調整
+                              x1 + (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
                               x2, control_y)
         else:
             # 右半分：中央から終点へ（2本の曲線）
-            control_y = y - 4.3 * mm
+            control_y = y - 4.0 * mm  # 4.3mmから4.0mmに調整
             self.canvas.bezier(x1, control_y,
-                              x2 - (x2 - x1) * 0.5, control_y,
-                              x2 - (x2 - x1) * 0.25, y,
+                              x2 - (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
+                              x2 - (x2 - x1) * 0.3, y,          # 0.25から0.3に調整
                               x2, y)
-            control_y = y - 3.7 * mm
+            control_y = y - 3.5 * mm  # 3.7mmから3.5mmに調整
             self.canvas.bezier(x1, control_y,
-                              x2 - (x2 - x1) * 0.5, control_y,
-                              x2 - (x2 - x1) * 0.25, y,
+                              x2 - (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
+                              x2 - (x2 - x1) * 0.3, y,          # 0.25から0.3に調整
                               x2, y) 

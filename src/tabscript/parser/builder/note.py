@@ -87,11 +87,16 @@ class NoteBuilder:
             # フレット番号を抽出（u/dの後の数字はフレット番号）
             fret_str = token[1:].split(':')[0]
             
+            # フレットからも &を削除（もし含まれていたら）
+            connect_next = False
+            if fret_str.endswith('&'):
+                connect_next = True
+                fret_str = fret_str[:-1]
+            
             parts = token.split(':')
             duration = parts[1] if len(parts) > 1 else default_duration
             
-            # 音符は次の音符と接続されるか？
-            connect_next = False
+            # 音価からも &を削除
             if duration.endswith('&'):
                 connect_next = True
                 duration = duration.rstrip('&')
@@ -144,8 +149,19 @@ class NoteBuilder:
             string_num = self.last_string
             fret_str = string_fret
         
+        # フレットからも &を削除（もし含まれていたら）
+        connect_next = False
+        if fret_str.endswith('&'):
+            connect_next = True
+            fret_str = fret_str[:-1]  # &を取り除く
+        
         # 音価を抽出
         duration = parts[1] if len(parts) > 1 else default_duration
+        
+        # 音価からも &を削除
+        if duration.endswith('&'):
+            connect_next = True
+            duration = duration.rstrip('&')
         
         # ミュート音符の処理（X または x）
         if fret_str.upper() == 'X':
@@ -154,11 +170,8 @@ class NoteBuilder:
         else:
             is_muted = False
         
-        # 音符は次の音符と接続されるか？
-        connect_next = False
-        if duration.endswith('&'):
-            connect_next = True
-            duration = duration.rstrip('&')
+        # デバッグ出力を追加して、&が正しく除去されていることを確認
+        self.debug_print(f"After parsing: string={string_num}, fret={fret_str}, duration={duration}, connect_next={connect_next}")
         
         note = Note(
             string=string_num,
@@ -269,3 +282,40 @@ class NoteBuilder:
             "ukulele": 4
         }
         return tuning_map.get(self.tuning, 6)  # デフォルトは6弦 
+
+    def parse_bar_line(self, line):
+        """小節行を解析してBarオブジェクトを返す"""
+        bar = Bar(notes=[])
+        
+        # 小節行をトークンに分割
+        tokens = self._tokenize_bar_line(line)
+        
+        # コード名と音価の初期設定
+        current_chord = None
+        current_duration = "4"  # デフォルトは4分音符
+        
+        # 各トークンを解析
+        for token in tokens:
+            # コード名の処理
+            if token.startswith('@'):
+                current_chord = token[1:]  # @を除去してコード名を抽出
+                continue
+            
+            # 音符の解析
+            try:
+                note = self.parse_note(token, current_duration, current_chord)
+                
+                # デバッグ出力を追加して、&が正しく処理されているか確認
+                self.debug_print(f"Created note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
+                
+                # 音価を更新（次の音符のデフォルト値として）
+                if note.duration:
+                    current_duration = note.duration
+                
+                # 音符をバーに追加
+                bar.notes.append(note)
+            except Exception as e:
+                self.debug_print(f"Error parsing note token '{token}': {str(e)}")
+                raise e
+        
+        return bar 
