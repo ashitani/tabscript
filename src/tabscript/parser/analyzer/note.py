@@ -104,3 +104,50 @@ def _parse_note(self, token, default_duration="4", chord=None):
     )
     
     return note 
+
+def parse_chord_notation(self, token, default_duration=None, chord=None):
+    """和音表記（括弧で囲まれた複数の音符）をパースする
+    
+    Args:
+        token: 和音表記トークン（例：'(1-2 2-2 3-3):4'）
+        default_duration: デフォルト音価
+        chord: コード名
+    
+    Returns:
+        Note: 和音の主音（chord_notesに他の音符が含まれる）
+    """
+    # デバッグ出力
+    self.debug_print(f"parse_chord_notation: token='{token}', default_duration='{default_duration}', chord='{chord}'")
+    
+    # 括弧と音価の分離
+    if token.startswith('(') and ')' in token:
+        chord_content = token[1:token.find(')')].strip()
+        
+        # 音価の取得（括弧の後に:区切りで音価が指定されている場合）
+        duration_part = token[token.find(')'):]
+        if ':' in duration_part:
+            duration = duration_part.split(':')[1]
+        else:
+            duration = default_duration
+        
+        # コンテンツを空白で分割して各音符を取得
+        notes_tokens = chord_content.split()
+        if not notes_tokens:
+            raise ValueError(f"Empty chord notation: {token}")
+        
+        # 最初の音符を主音として処理
+        main_note = self.parse_note(notes_tokens[0], duration, chord)
+        
+        # 和音フラグの設定
+        main_note.is_chord = True
+        main_note.is_chord_start = True
+        
+        # 残りの音符を和音の構成音として追加
+        for note_token in notes_tokens[1:]:
+            chord_note = self.parse_note(note_token, duration, chord)
+            chord_note.is_chord = True
+            main_note.chord_notes.append(chord_note)
+        
+        return main_note
+    else:
+        raise ValueError(f"Invalid chord notation format: {token}") 

@@ -61,12 +61,15 @@ class TestBarBuilder:
         builder = BarBuilder()
         bar = builder.parse_bar_line("(1-1 2-2):4 3-3:4")
         
-        assert len(bar.notes) == 3
+        # 修正: 和音1つと単音1つで計2音
+        assert len(bar.notes) == 2
+        
+        # 和音の内部構造を検証
         assert bar.notes[0].is_chord
         assert bar.notes[0].is_chord_start
-        assert bar.notes[1].is_chord
-        assert not bar.notes[1].is_chord_start
-        assert not bar.notes[2].is_chord
+        assert len(bar.notes[0].chord_notes) == 1  # 主音以外に1音
+        assert bar.notes[0].chord_notes[0].string == 2
+        assert bar.notes[0].chord_notes[0].fret == "2"
     
     def test_parse_bar_with_rest(self):
         """休符を含む小節のパースをテスト"""
@@ -147,9 +150,7 @@ class TestBarBuilder:
         builder = BarBuilder()
         notes = builder._parse_notes("(1-1 2-2):4 3-3:4")
         
-        assert len(notes) == 3
+        assert len(notes) == 2
         assert notes[0].is_chord
         assert notes[0].is_chord_start
-        assert notes[1].is_chord
-        assert not notes[1].is_chord_start
-        assert not notes[2].is_chord 
+        assert not notes[1].is_chord

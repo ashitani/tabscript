@@ -93,23 +93,27 @@ class TestNoteBuilder:
     def test_parse_chord_notation(self):
         """和音記法のパースをテスト"""
         builder = NoteBuilder()
-        chord_notes = builder.parse_chord_notation("(1-1 2-2 3-3):4", None)
+        chord_note = builder.parse_chord_notation("(1-1 2-2 3-3):4", None)
         
-        # リストが返されることを確認
-        assert isinstance(chord_notes, list)
-        assert len(chord_notes) == 3
+        # 単一のNoteオブジェクトが返されることを確認
+        assert isinstance(chord_note, Note)
+        assert chord_note.is_chord
+        assert chord_note.is_chord_start
+        assert len(chord_note.chord_notes) == 2  # 主音以外の2つの音符
         
-        # 各音符の確認
-        assert chord_notes[0].string == 1
-        assert chord_notes[0].fret == "1"
-        assert chord_notes[0].duration == "4"
-        assert chord_notes[0].chord == "chord"
+        # 主音の確認
+        assert chord_note.string == 1
+        assert chord_note.fret == "1"
+        assert chord_note.duration == "4"
         
-        assert chord_notes[1].string == 2
-        assert chord_notes[1].fret == "2"
+        # 構成音の確認
+        assert chord_note.chord_notes[0].string == 2
+        assert chord_note.chord_notes[0].fret == "2"
+        assert chord_note.chord_notes[0].duration == "4"
         
-        assert chord_notes[2].string == 3
-        assert chord_notes[2].fret == "3"
+        assert chord_note.chord_notes[1].string == 3
+        assert chord_note.chord_notes[1].fret == "3"
+        assert chord_note.chord_notes[1].duration == "4"
     
     def test_calculate_note_step(self):
         """音符のステップ数計算をテスト"""

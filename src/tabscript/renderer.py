@@ -497,22 +497,20 @@ class Renderer:
                     self._draw_chord(note_x, y_positions[0], note.chord)
                     last_chord = note.chord
                 
+                # デバッグ出力を追加
+                self.debug_print(f"Processing note: {note}")
+                self.debug_print(f"  is_chord: {note.is_chord}")
+                self.debug_print(f"  is_chord_start: {getattr(note, 'is_chord_start', False)}")
+                if note.is_chord and getattr(note, 'is_chord_start', False):
+                    self.debug_print(f"  chord_notes: {len(note.chord_notes)}")
+                
                 # 音符を描画
                 if not note.is_rest:
-                    if note.is_chord:
-                        # 主音を描画
-                        y = y_positions[note.string - 1]
-                        self.debug_print(f"Drawing chord main note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
-                        self._draw_fret_number(note_x, y, note.fret, note.connect_next)
-                        
-                        # 和音の他の音を描画
-                        for chord_note in note.chord_notes:
-                            y = y_positions[chord_note.string - 1]
-                            self.debug_print(f"Drawing chord sub-note: string={chord_note.string}, fret={chord_note.fret}, connect_next={chord_note.connect_next}")
-                            self._draw_fret_number(note_x, y, chord_note.fret, chord_note.connect_next)
+                    if note.is_chord and getattr(note, 'is_chord_start', False):
+                        # 和音を一括描画
+                        self._draw_chord_notes(note_x, y_positions, note)
                     elif not note.is_chord:
-                        # 通常の音符の場合
-                        self.debug_print(f"Drawing regular note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
+                        # 和音でない通常の音符を描画
                         self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret, note.connect_next)
                 
                 note_x += note_width
@@ -641,3 +639,17 @@ class Renderer:
                               x2 - (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
                               x2 - (x2 - x1) * 0.3, y,          # 0.25から0.3に調整
                               x2, y) 
+
+    def _draw_chord_notes(self, note_x, y_positions, note):
+        """和音の音符を描画（ヘルパーメソッド）"""
+        # 主音を描画
+        y = y_positions[note.string - 1]
+        self.debug_print(f"Drawing chord main note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
+        self._draw_fret_number(note_x, y, note.fret, note.connect_next)
+        
+        # 和音の他の音を描画
+        if hasattr(note, 'chord_notes') and note.chord_notes:
+            for chord_note in note.chord_notes:
+                y = y_positions[chord_note.string - 1]
+                self.debug_print(f"Drawing chord sub-note: string={chord_note.string}, fret={chord_note.fret}, connect_next={chord_note.connect_next}")
+                self._draw_fret_number(note_x, y, chord_note.fret, chord_note.connect_next) 

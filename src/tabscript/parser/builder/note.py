@@ -1,6 +1,6 @@
 from fractions import Fraction
 from typing import List, Optional, Dict, Tuple
-from ...models import Note
+from ...models import Note, Bar
 from ...exceptions import ParseError
 import re
 
@@ -187,60 +187,62 @@ class NoteBuilder:
         
         return note
     
-    def parse_chord_notation(self, chord_token: str, chord: Optional[str] = None) -> List[Note]:
-        """コード記法をパースする
+    def parse_chord_notation(self, token: str, default_duration: str = None, chord: Optional[str] = None) -> Note:
+        """和音表記（括弧で囲まれた複数の音符）をパースする"""
+        self.debug_print(f"parse_chord_notation: token='{token}', default_duration='{default_duration}', chord='{chord}'")
         
-        Args:
-            chord_token: コード記法トークン（例: "(1-0 2-2 3-2):4"）
-            chord: コード名
+        # 括弧と音価の分離
+        if token.startswith('(') and ')' in token:
+            # 右括弧の位置を見つける
+            close_bracket_pos = token.find(')')
             
-        Returns:
-            List[Note]: 解析された音符のリスト
-        """
-        # 音価の抽出
-        parts = chord_token.split(':')
-        chord_part = parts[0]
-        duration = parts[1] if len(parts) > 1 else self.last_duration
-        
-        # 括弧を削除
-        if chord_part.startswith('(') and chord_part.endswith(')'):
-            chord_content = chord_part[1:-1]  # ()を削除
+            # 括弧内のコンテンツを抽出
+            content_part = token[1:close_bracket_pos]
+            
+            # 音価の取得（括弧の後に:区切りで音価が指定されている場合）
+            duration = default_duration
+            connect_next = False
+            if close_bracket_pos < len(token) - 1 and ':' in token[close_bracket_pos:]:
+                duration_part = token[close_bracket_pos:]
+                try:
+                    duration = duration_part.split(':')[1]
+                    # &記号の処理
+                    if duration.endswith('&'):
+                        connect_next = True
+                        duration = duration.rstrip('&')
+                except IndexError:
+                    pass
+            
+            # コンテンツを空白で分割して各音符を取得
+            notes_tokens = content_part.split()
+            if not notes_tokens:
+                raise ValueError(f"Empty chord notation: {token}")
+            
+            self.debug_print(f"Chord content: {content_part}, notes_tokens: {notes_tokens}, duration: {duration}")
+            
+            # 最初の音符を主音として処理
+            main_note = self.parse_note(notes_tokens[0], duration, chord)
+            
+            # 和音フラグと接続フラグの設定
+            main_note.is_chord = True
+            main_note.is_chord_start = True
+            main_note.chord_notes = []  # 明示的に初期化
+            
+            if connect_next:
+                main_note.connect_next = True
+            
+            # 残りの音符を和音の構成音として追加
+            for note_token in notes_tokens[1:]:
+                chord_note = self.parse_note(note_token, duration, chord)
+                chord_note.is_chord = True
+                if connect_next:
+                    chord_note.connect_next = True
+                main_note.chord_notes.append(chord_note)
+            
+            self.debug_print(f"Created chord with {len(main_note.chord_notes)} additional notes")
+            return main_note
         else:
-            # 括弧が閉じられていない場合は、先頭の括弧だけ削除
-            if chord_part.startswith('('):
-                chord_content = chord_part[1:]
-                # 閉じ括弧を探して削除
-                if ')' in chord_content:
-                    chord_content = chord_content.split(')')[0]
-            else:
-                chord_content = chord_part
-        
-        # コードの各音符を解析
-        notes = []
-        chord_note_tokens = chord_content.split()
-        
-        # コード名が指定されていない場合は"chord"を使用
-        if chord is None:
-            chord = "chord"
-        
-        for i, note_token in enumerate(chord_note_tokens):
-            # 音符トークンが弦-フレット形式かチェック
-            if '-' not in note_token:
-                continue
-            
-            note = self.parse_note(note_token, duration, chord)
-            
-            # コード属性を設定
-            note.is_chord = True
-            if i == 0:
-                note.is_chord_start = True
-            
-            notes.append(note)
-        
-        # 音価を更新
-        self.last_duration = duration
-        
-        return notes
+            raise ValueError(f"Invalid chord notation format: {token}")
     
     def calculate_note_step(self, note: Note) -> None:
         """音符のステップ数を計算する
@@ -288,7 +290,7 @@ class NoteBuilder:
         bar = Bar(notes=[])
         
         # 小節行をトークンに分割
-        tokens = self._tokenize_bar_line(line)
+        tokens = re.findall(r'\S+', line)
         
         # コード名と音価の初期設定
         current_chord = None
@@ -301,12 +303,20 @@ class NoteBuilder:
                 current_chord = token[1:]  # @を除去してコード名を抽出
                 continue
             
-            # 音符の解析
             try:
-                note = self.parse_note(token, current_duration, current_chord)
+                # 和音表記の場合
+                if token.startswith('(') and ')' in token:
+                    chord_note = self.parse_chord_notation(token, current_duration, current_chord)
+                    # 音価を更新（次の音符のデフォルト値として）
+                    if chord_note.duration:
+                        current_duration = chord_note.duration
+                    
+                    # 和音をバーに追加
+                    bar.notes.append(chord_note)
+                    continue
                 
-                # デバッグ出力を追加して、&が正しく処理されているか確認
-                self.debug_print(f"Created note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
+                # 通常の音符の処理
+                note = self.parse_note(token, current_duration, current_chord)
                 
                 # 音価を更新（次の音符のデフォルト値として）
                 if note.duration:
@@ -315,7 +325,7 @@ class NoteBuilder:
                 # 音符をバーに追加
                 bar.notes.append(note)
             except Exception as e:
-                self.debug_print(f"Error parsing note token '{token}': {str(e)}")
+                self.debug_print(f"Error parsing token '{token}': {str(e)}")
                 raise e
         
         return bar 

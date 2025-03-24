@@ -130,84 +130,103 @@ class BarBuilder:
         # 音符をパース
         return self.note_builder.parse_note(token, default_duration, chord)
     
-    def _parse_notes(self, notes_str: str, chord: Optional[str] = None) -> List[Note]:
-        """スペース区切りの音符をパースしてNoteのリストを返す
+    def _parse_notes(self, content: str) -> List[Note]:
+        """小節内容から音符のリストを生成する
         
         Args:
-            notes_str: パースする音符文字列
-            chord: コード名
+            content: 小節の内容
             
         Returns:
-            List[Note]: パースされた音符オブジェクトのリスト
+            List[Note]: 音符のリスト
         """
         notes = []
         
-        # コード名の処理
-        if isinstance(notes_str, str) and notes_str.startswith('@'):
-            chord_parts = notes_str.split(' ', 1)
-            chord = chord_parts[0][1:]  # @を除去
-            if len(chord_parts) > 1:
-                notes_str = chord_parts[1]
-            else:
-                notes_str = ""  # コード名のみの場合は空文字列に
+        # 和音トークンを正しく抽出するための正規表現パターン
+        # 括弧内のすべてを1つのトークンとして扱う
+        tokens = []
+        current_pos = 0
+        content_length = len(content)
         
-        # 和音記法の処理（括弧で囲まれた音符）
-        if isinstance(notes_str, str) and '(' in notes_str and ')' in notes_str:
-            # 括弧の位置を特定
-            open_bracket_pos = notes_str.find('(')
-            close_bracket_pos = notes_str.find(')', open_bracket_pos)
+        while current_pos < content_length:
+            # 空白をスキップ
+            while current_pos < content_length and content[current_pos].isspace():
+                current_pos += 1
             
-            # 括弧の前の部分を処理
-            if open_bracket_pos > 0:
-                prefix = notes_str[:open_bracket_pos].strip()
-                if prefix:
-                    prefix_notes = self._parse_notes(prefix, chord)
-                    notes.extend(prefix_notes)
+            if current_pos >= content_length:
+                break
             
-            # 和音部分を抽出
-            chord_part = notes_str[open_bracket_pos:close_bracket_pos+1]
+            # 和音（括弧で囲まれたもの）を処理
+            if content[current_pos] == '(':
+                bracket_depth = 1
+                start_pos = current_pos
+                current_pos += 1
+                
+                # 括弧が閉じられるまで読み進める
+                while current_pos < content_length and bracket_depth > 0:
+                    if content[current_pos] == '(':
+                        bracket_depth += 1
+                    elif content[current_pos] == ')':
+                        bracket_depth -= 1
+                    current_pos += 1
+                
+                # 和音の後に音価指定がある場合（例: (1-1 2-2):4）
+                if current_pos < content_length and content[current_pos] == ':':
+                    while current_pos < content_length and not content[current_pos].isspace():
+                        current_pos += 1
+                
+                # 和音全体をトークンとして追加
+                tokens.append(content[start_pos:current_pos])
+            else:
+                # 通常のトークン（和音以外）
+                start_pos = current_pos
+                
+                # スペースまたは括弧が出現するまで読み進める
+                while current_pos < content_length and not content[current_pos].isspace() and content[current_pos] != '(':
+                    current_pos += 1
+                
+                tokens.append(content[start_pos:current_pos])
+        
+        self.debug_print(f"Tokenized content: {tokens}")
+        
+        # コード名と音価の初期設定
+        current_chord = None
+        current_duration = "4"  # デフォルトは4分音符
+        
+        # 各トークンを解析
+        for token in tokens:
+            # コード名の処理
+            if token.startswith('@'):
+                current_chord = token[1:]  # @を除去してコード名を抽出
+                continue
             
-            # 音価を抽出
-            if close_bracket_pos + 1 < len(notes_str) and notes_str[close_bracket_pos + 1] == ':':
-                colon_pos = notes_str.find(':', close_bracket_pos)
-                space_pos = notes_str.find(' ', colon_pos)
-                if space_pos > 0:
-                    chord_part += notes_str[close_bracket_pos+1:space_pos]
-                    suffix = notes_str[space_pos+1:].strip()
+            try:
+                # 和音表記の場合
+                if token.startswith('(') and ')' in token:
+                    chord_note = self.note_builder.parse_chord_notation(token, current_duration, current_chord)
+                    
+                    # 音価を更新（次の音符のデフォルト値として）
+                    if hasattr(chord_note, 'duration') and chord_note.duration:
+                        current_duration = chord_note.duration
+                    
+                    # 和音は単一のNoteオブジェクトとして追加
+                    notes.append(chord_note)
                 else:
-                    chord_part += notes_str[close_bracket_pos+1:]
-                    suffix = ""
-            else:
-                suffix = notes_str[close_bracket_pos+1:].strip()
-            
-            # 和音部分をパース
-            self.note_builder.current_line = self.current_line
-            chord_notes = self.note_builder.parse_chord_notation(chord_part, chord)
-            
-            # 和音の音符をリストに追加
-            notes.extend(chord_notes)
-            
-            # 残りの部分を処理
-            if suffix:
-                suffix_notes = self._parse_notes(suffix, chord)
-                notes.extend(suffix_notes)
-            
-            return notes
+                    # 通常の音符の処理
+                    note = self.note_builder.parse_note(token, current_duration, current_chord)
+                    
+                    # 音価を更新（次の音符のデフォルト値として）
+                    if hasattr(note, 'duration') and note.duration:
+                        current_duration = note.duration
+                    
+                    # 音符をリストに追加
+                    notes.append(note)
+            except Exception as e:
+                self.debug_print(f"Error parsing token '{token}': {str(e)}")
+                raise e
         
-        # 文字列の場合のみトークン分割処理
-        if isinstance(notes_str, str) and notes_str.strip():
-            # 通常の音符（スペースで区切られた複数の音符）
-            tokens = notes_str.split()
-            for token in tokens:
-                self.note_builder.current_line = self.current_line
-                note = self.note_builder.parse_note(token, self.last_duration, chord)
-                notes.append(note)
-        
-        # コード名だけを持つバーの場合
-        if chord and not notes and not isinstance(notes_str, str):
-            # 空のバーにコード名を設定
-            bar = Bar()
-            bar.chord = chord
+        # 音符ごとにステップ数を計算
+        for note in notes:
+            self.note_builder.calculate_note_step(note)
         
         return notes
     

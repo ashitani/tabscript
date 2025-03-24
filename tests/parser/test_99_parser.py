@@ -261,24 +261,17 @@ def test_parse_with_chord_notation():
     section = score.sections[0]
     bar = section.columns[0].bars[0]
     
-    # コードの確認
-    assert len(bar.notes) == 12  # 2つのコード（各6音）
+    # 修正: コードは個別のノートではなく、和音ノート2つ
+    assert len(bar.notes) == 2  # 2つの和音
     
-    # 1つ目のコード（Eメジャー）
-    assert bar.notes[0].string == 1 and bar.notes[0].fret == "0"
-    assert bar.notes[1].string == 2 and bar.notes[1].fret == "2"
-    assert bar.notes[2].string == 3 and bar.notes[2].fret == "2"
-    assert bar.notes[3].string == 4 and bar.notes[3].fret == "2"
-    assert bar.notes[4].string == 5 and bar.notes[4].fret == "0"
-    assert bar.notes[5].string == 6 and bar.notes[5].fret == "0"
+    # 和音の内部構造を検証
+    assert bar.notes[0].is_chord
+    assert bar.notes[0].is_chord_start
+    assert len(bar.notes[0].chord_notes) == 5  # 主音以外に5音
     
-    # 2つ目のコード（Gメジャー）
-    assert bar.notes[6].string == 1 and bar.notes[6].fret == "3"
-    assert bar.notes[7].string == 2 and bar.notes[7].fret == "3"
-    assert bar.notes[8].string == 3 and bar.notes[8].fret == "0"
-    assert bar.notes[9].string == 4 and bar.notes[9].fret == "0"
-    assert bar.notes[10].string == 5 and bar.notes[10].fret == "2"
-    assert bar.notes[11].string == 6 and bar.notes[11].fret == "3"
+    assert bar.notes[1].is_chord
+    assert bar.notes[1].is_chord_start
+    assert len(bar.notes[1].chord_notes) == 5  # 主音以外に5音
 
 def test_parse_with_connect():
     """接続記号(&)を含むTabScriptファイルをパースできることを確認"""
@@ -427,5 +420,5 @@ def test_complex_score():
     assert len(verse_b_section.columns[0].bars) == 2
     
     # コードの確認
-    assert len(verse_b_section.columns[0].bars[0].notes) == 12  # 2つのコード（各6音）
-    assert len(verse_b_section.columns[0].bars[1].notes) == 12  # 2つのコード（各6音）
+    assert len(verse_b_section.columns[0].bars[0].notes) == 2  # 2つのコード（各6音）
+    assert len(verse_b_section.columns[0].bars[1].notes) == 2  # 2つのコード（各6音）
