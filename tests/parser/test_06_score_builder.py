@@ -405,4 +405,131 @@ class TestScoreBuilder:
         
         # 最初のカラムが2小節、次のカラムも2小節であることを確認
         assert len(verse_a_section.columns[0].bars) == 2
-        assert len(verse_a_section.columns[1].bars) == 2 
+        assert len(verse_a_section.columns[1].bars) == 2
+
+    def test_default_section(self):
+        """デフォルトセクションのテスト"""
+        metadata = {
+            "title": "Test Song",
+            "tuning": "guitar",
+            "beat": "4/4"
+        }
+        
+        sections = [
+            {
+                "name": "",
+                "bars": [
+                    BarInfo(content="5-1:4 4-2:4 3-3:4 2-4:4")
+                ]
+            }
+        ]
+        builder = ScoreBuilder()
+        score = builder.build_score(metadata, sections)
+        
+        # スコアの構造を検証
+        assert len(score.sections) == 1
+        section = score.sections[0]
+        assert section.name == ""  # デフォルトセクションの名前は空文字列
+        assert section.is_default is True
+        
+        # 小節の検証
+        assert len(section.columns) == 1
+        assert len(section.columns[0].bars) == 1
+        bar = section.columns[0].bars[0]
+        assert len(bar.notes) == 4
+        
+        # 音符の検証
+        notes = bar.notes
+        assert notes[0].string == 5 and notes[0].fret == 1
+        assert notes[1].string == 4 and notes[1].fret == 2
+        assert notes[2].string == 3 and notes[2].fret == 3
+        assert notes[3].string == 2 and notes[3].fret == 4
+        
+        # メタデータの検証
+        assert score.title == "Test Song"
+        assert score.tuning == "guitar"
+        assert score.beat == "4/4"
+
+    def test_mixed_sections(self):
+        """デフォルトセクションと名前付きセクションの混在テスト"""
+        metadata = {
+            "title": "Test Song",
+            "tuning": "guitar",
+            "beat": "4/4"
+        }
+        
+        sections = [
+            {
+                "name": "",
+                "bars": [
+                    BarInfo(content="5-1:4 4-2:4 3-3:4 2-4:4")
+                ]
+            },
+            {
+                "name": "Chorus",
+                "bars": [
+                    BarInfo(content="1-0:4 2-0:4 3-0:4 4-0:4")
+                ]
+            }
+        ]
+        builder = ScoreBuilder()
+        score = builder.build_score(metadata, sections)
+        
+        # スコアの構造を検証
+        assert len(score.sections) == 2
+        
+        # デフォルトセクションの検証
+        default_section = score.sections[0]
+        assert default_section.name == ""  # デフォルトセクションの名前は空文字列
+        assert default_section.is_default is True
+        assert len(default_section.columns) == 1
+        assert len(default_section.columns[0].bars) == 1
+        assert len(default_section.columns[0].bars[0].notes) == 4
+        
+        # 名前付きセクションの検証
+        chorus_section = score.sections[1]
+        assert chorus_section.name == "Chorus"
+        assert chorus_section.is_default is False
+        assert len(chorus_section.columns) == 1
+        assert len(chorus_section.columns[0].bars) == 1
+        assert len(chorus_section.columns[0].bars[0].notes) == 4
+        
+        # メタデータの検証
+        assert score.title == "Test Song"
+        assert score.tuning == "guitar"
+        assert score.beat == "4/4"
+
+    def test_empty_default_section(self):
+        """空のデフォルトセクションのテスト"""
+        metadata = {
+            "title": "Test Song",
+            "tuning": "guitar",
+            "beat": "4/4"
+        }
+        
+        sections = [
+            {
+                "name": "Chorus",
+                "bars": [
+                    BarInfo(content="1-0:4 2-0:4 3-0:4 4-0:4")
+                ]
+            }
+        ]
+        builder = ScoreBuilder()
+        score = builder.build_score(metadata, sections)
+        
+        # スコアの構造を検証
+        assert len(score.sections) == 1  # 空のデフォルトセクションは作成されない
+        
+        # 名前付きセクションの検証
+        chorus_section = score.sections[0]
+        assert chorus_section.name == "Chorus"
+        assert chorus_section.is_default is False
+        assert len(chorus_section.columns) == 1
+        assert len(chorus_section.columns[0].bars) == 1
+        assert len(chorus_section.columns[0].bars[0].notes) == 4
+        
+        # メタデータの検証
+        assert score.title == "Test Song"
+        assert score.tuning == "guitar"
+        assert score.beat == "4/4" 

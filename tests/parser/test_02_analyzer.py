@@ -369,3 +369,79 @@ def test_standalone_repeat_brackets():
     assert bars[1].content == "3-0:8 3-2:8 3-3:8 3-5:8"
     assert not bars[1].repeat_start
     assert bars[1].repeat_end
+
+def test_analyze_section_structure():
+    """セクション構造の解析をテスト"""
+    analyzer = StructureAnalyzer()
+    
+    # デフォルトセクションのみのケース
+    text = """
+    5-1:4 4-2:4 3-3:4 2-4:4
+    """
+    metadata, sections = analyzer.analyze(text)
+    
+    assert len(sections) == 1
+    section = sections[0]
+    assert section["name"] == ""  # デフォルトセクションの名前は空文字列
+    assert len(section["bars"]) == 1
+    assert section["bars"][0].content == "5-1:4 4-2:4 3-3:4 2-4:4"
+    
+    # デフォルトセクションと名前付きセクションの混在
+    text = """
+    5-1:4 4-2:4 3-3:4 2-4:4
+
+    [Chorus]
+    1-0:4 2-0:4 3-0:4 4-0:4
+    """
+    metadata, sections = analyzer.analyze(text)
+    
+    assert len(sections) == 2
+    
+    # デフォルトセクションの検証
+    default_section = sections[0]
+    assert default_section["name"] == ""
+    assert len(default_section["bars"]) == 1
+    assert default_section["bars"][0].content == "5-1:4 4-2:4 3-3:4 2-4:4"
+    
+    # 名前付きセクションの検証
+    chorus_section = sections[1]
+    assert chorus_section["name"] == "Chorus"
+    assert len(chorus_section["bars"]) == 1
+    assert chorus_section["bars"][0].content == "1-0:4 2-0:4 3-0:4 4-0:4"
+    
+    # 空のデフォルトセクションのケース
+    text = """
+    [Chorus]
+    1-0:4 2-0:4 3-0:4 4-0:4
+    """
+    metadata, sections = analyzer.analyze(text)
+    
+    assert len(sections) == 1  # 空のデフォルトセクションは作成されない
+    section = sections[0]
+    assert section["name"] == "Chorus"
+    assert len(section["bars"]) == 1
+    assert section["bars"][0].content == "1-0:4 2-0:4 3-0:4 4-0:4"
+    
+    # 複数の名前付きセクション
+    text = """
+    [Intro]
+    1-0:4 2-0:4
+
+    [Verse]
+    3-0:4 4-0:4
+
+    [Chorus]
+    5-0:4 6-0:4
+    """
+    metadata, sections = analyzer.analyze(text)
+    
+    assert len(sections) == 3
+    
+    # 各セクションの検証
+    assert sections[0]["name"] == "Intro"
+    assert sections[1]["name"] == "Verse"
+    assert sections[2]["name"] == "Chorus"
+    
+    assert len(sections[0]["bars"]) == 1
+    assert len(sections[1]["bars"]) == 1
+    assert len(sections[2]["bars"]) == 1 
