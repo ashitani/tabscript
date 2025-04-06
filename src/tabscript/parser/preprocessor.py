@@ -64,11 +64,11 @@ class TextPreprocessor:
         """
         self.debug_print("\n=== _clean_text ===", level=1)
         
-        # 行末コメントの削除（直前の空白含む）
-        text = re.sub(r'\s*#.*$', '', text, flags=re.MULTILINE)
+        # 行末コメントの削除（//で始まるコメント）
+        text = re.sub(r'\s*//.*$', '', text, flags=re.MULTILINE)
         
-        # 行頭コメントの削除
-        text = re.sub(r'^#.*$', '', text, flags=re.MULTILINE)
+        # 行頭コメントの削除（#で始まる行、インデントを考慮）
+        text = re.sub(r'^\s*#.*$', '', text, flags=re.MULTILINE)
         
         # 複数行コメントの削除（''' と """ の両方）
         # まず '''で囲まれた部分を削除

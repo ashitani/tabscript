@@ -1,0 +1,68 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project rule
+TabScriptは弦楽器演奏に用いるタブ譜を表現するための言語です。
+このプロジェクトはTabScriptの仕様とその処理系であるpythonモジュールを取り扱います。
+
+## プロジェクト構成
+
+tabscript/
+├── docs/ # ドキュメント
+│   ├── format.md # 言語仕様
+│   ├── implementation.md # 実装仕様
+│   ├── tests.md # テスト仕様
+│   └── layout.md # レイアウト仕様
+├── src/ # ソースコード
+│   └── tabscript/ # メインのパッケージ
+│       ├── init.py # パブリックAPIの定義
+│       ├── models.py # データモデル定義
+│       ├── parser/ # パース処理関連
+│       │   ├── init.py
+│       │   ├── parser.py # メインのパーサー
+│       │   ├── preprocessor.py # テキスト前処理
+│       │   ├── analyzer.py # 構造解析
+│       │   ├── validator.py # バリデーション
+│       │   ├── analyzer/ # 詳細な解析処理
+│       │   └── builder/ # スコア構築処理
+│       ├── renderer.py # レンダリング処理
+│       ├── style.py # スタイル定義
+│       ├── exceptions.py # 例外定義
+│       └── cli.py # コマンドラインインターフェース
+├── tests/ # テストコード
+│   ├── conftest.py # テスト共通設定
+│   ├── data/ # テストデータ
+│   ├── integration/ # 統合テスト
+│   ├── parser/ # パース処理のテスト
+│   │   ├── test_01_preprocessor.py
+│   │   ├── test_02_analyzer.py
+│   │   ├── test_03_validator.py
+│   │   ├── test_04_note_builder.py
+│   │   ├── test_05_bar_builder.py
+│   │   ├── test_06_score_builder.py
+│   │   ├── test_07_analyzer.py
+│   │   └── test_99_parser.py
+│   └── renderer/ # レンダリング処理のテスト
+├── .cursor/ # Cursor IDE設定
+│   └── rules/ # プロジェクトルール
+│       └── tabscript.mdc
+├── .gitignore # Git除外設定
+├── README.md # プロジェクト概要
+├── requirements.txt # 依存パッケージ
+└── setup.py # パッケージ設定
+
+## ドキュメント
+
+各種仕様が下記に記載してあるので、必要に応じて参照してください。
+
+- [format.md](mdc:docs/format.md) - TabScriptの言語仕様
+- [implementation.md](mdc:mplementation.md) - 実装上の注意点
+- @tests.md - テスト仕様
+- [layout.md](mdc:docs/layout.md) - 可視化のレイアウト仕様
+
+## デバッグ時の注意事項
+
+@tests.md および@implementation.md を参照し、どのテストがどのソースコードに対応しているかを確認の上、なるべく他のコードに影響しないように問題を各個に解決してください。
+

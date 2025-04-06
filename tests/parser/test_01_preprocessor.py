@@ -18,6 +18,26 @@ def test_comment_removal():
     input_text = "# コメント\n\n実際の内容\n\n"
     assert preprocessor._clean_text(input_text) == "実際の内容"
 
+def test_end_of_line_comment():
+    """行末コメントのテスト"""
+    preprocessor = TextPreprocessor()
+    
+    # 基本的な行末コメント
+    input_text = "3-3:4 4-4:4 // これは4分音符2つ"
+    assert preprocessor._clean_text(input_text) == "3-3:4 4-4:4"
+    
+    # コードネーム後の行末コメント
+    input_text = "@Am 6-0:4 // これはAmコード"
+    assert preprocessor._clean_text(input_text) == "@Am 6-0:4"
+    
+    # 複数の行末コメント
+    input_text = "3-3:4 // 音符1\n4-4:4 // 音符2"
+    assert preprocessor._clean_text(input_text) == "3-3:4\n4-4:4"
+    
+    # 行末コメントと行頭コメントの混在
+    input_text = "# 行頭コメント\n3-3:4 // 行末コメント"
+    assert preprocessor._clean_text(input_text) == "3-3:4"
+
 def test_multiline_comment():
     """複数行コメントのテスト"""
     preprocessor = TextPreprocessor()

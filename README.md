@@ -77,14 +77,15 @@ parser.render_score("output.txt")
 開発への参加方法、テスト方法、コーディング規約などについては[docs/development.md](docs/development.md)を参照してください。
 
 ## Todo
-- 繰り返し
+- ✅繰り返し
 - DS、Coda
-- コメントをC言語形式に
+- ✅行末コメント対応
 - 三連符
 - 各種奏法（ハンマリング、プリング、スライド、チョーキング）
 - 改ページ
 - VSCode plugin
 - HTML5+JS
+- pypi
 
 ## ライセンス
 
