@@ -88,6 +88,9 @@ class Renderer:
                 # 小節グループを描画（接続情報を渡す）
                 y = self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
                 
+                # セクション内の改行時に適度な間隔を追加
+                y -= self.style_manager.get("section_row_spacing")
+                
                 # 新しいページが必要かチェック
                 if y < self.margin_bottom:
                     self.canvas.showPage()

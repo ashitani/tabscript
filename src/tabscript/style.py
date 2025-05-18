@@ -29,6 +29,7 @@ class StyleManager:
             # 行の高さ
             "normal_row_height": 15 * mm,     # 通常の行の高さ（6弦×3mm + 余白）
             "volta_row_height": 20 * mm,      # ボルタブラケットを含む行の高さ
+            "section_row_spacing": 5 * mm,     # セクション内の改行時の間隔
             
             # 線の太さ
             "normal_line_width": 1.0,        # 通常の線の太さ
