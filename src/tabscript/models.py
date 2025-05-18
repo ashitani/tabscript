@@ -58,10 +58,11 @@ class Section:
         self.name = name
         self.columns = []
         self._bars = []  # 内部用の属性
+        self.is_default = name == ""  # 名前が空文字列の場合はデフォルトセクション
     
     def get_all_bars(self) -> List[Bar]:
-        """このセクションの全ての小節を返す（新しいコード用）"""
-        return [bar for column in self.columns for bar in column.bars]
+        """全ての小節を取得"""
+        return self._bars
     
     @property
     def bars(self) -> List[Bar]:

@@ -88,155 +88,297 @@ class StructureAnalyzer:
         return Structure(metadata=metadata, sections=sections)
 
     def _parse_metadata_line(self, line: str) -> Tuple[str, str]:
-        """メタデータ行を解析"""
-        if '=' not in line:
-            raise ParseError("Invalid metadata format", self.current_line)
-
-        key, value = line[1:].split('=', 1)
-        key = key.strip()
-        value = value.strip()
-
-        # 値が引用符で囲まれているか確認
-        if not (value.startswith('"') and value.endswith('"')):
-            raise ParseError("Invalid metadata format", self.current_line)  # エラーメッセージを変更
-
-        # 引用符を除去
-        value = value[1:-1]
-        return key, value
-
-    def analyze_section_bars(self, lines: List[str]) -> List[BarInfo]:
-        """セクション内の小節構造を解析
+        """メタデータ行を解析
         
         Args:
-            lines: セクションのテキスト行
+            line: 解析するメタデータ行
             
         Returns:
-            小節情報のリスト
+            Tuple[str, str]: メタデータのキーと値のタプル
+            
+        Raises:
+            ParseError: メタデータの形式が不正な場合
+        """
+        # $で始まるメタデータ行の処理
+        if line.startswith('$'):
+            # $を除去してキーと値を分離
+            parts = line[1:].split('=', 1)
+            if self.debug_mode:
+                print(f"[DEBUG] _parse_metadata_line: line='{line}' parts={parts}")
+            if len(parts) != 2:
+                if self.debug_mode:
+                    print(f"[DEBUG] Invalid metadata format: line='{line}' parts={parts}")
+                raise ParseError("Invalid metadata format", self.current_line)
+            key = parts[0].strip()
+            value = parts[1].strip()
+            
+            # 値が引用符で囲まれていることを確認
+            if not (value.startswith('"') and value.endswith('"')):
+                if self.debug_mode:
+                    print(f"[DEBUG] Metadata value not quoted: value='{value}' line='{line}'")
+                raise ParseError("Metadata value must be enclosed in quotes", self.current_line)
+                
+            value = value[1:-1]  # 引用符を除去
+            return key, value
+        
+        # @で始まるメタデータ行の処理
+        if line.startswith('@'):
+            parts = line[1:].split('=', 1)
+            if self.debug_mode:
+                print(f"[DEBUG] _parse_metadata_line: line='{line}' parts={parts}")
+            if len(parts) != 2:
+                if self.debug_mode:
+                    print(f"[DEBUG] Invalid metadata format: line='{line}' parts={parts}")
+                raise ParseError("Invalid metadata format", self.current_line)
+            key = parts[0].strip()
+            value = parts[1].strip()
+            
+            # 値が引用符で囲まれていることを確認
+            if not (value.startswith('"') and value.endswith('"')):
+                if self.debug_mode:
+                    print(f"[DEBUG] Metadata value not quoted: value='{value}' line='{line}'")
+                raise ParseError("Metadata value must be enclosed in quotes", self.current_line)
+                
+            value = value[1:-1]  # 引用符を除去
+            return key, value
+        
+        if self.debug_mode:
+            print(f"[DEBUG] Invalid metadata format (not $ or @): line='{line}'")
+        raise ParseError("Invalid metadata format", self.current_line)
+
+    def analyze(self, text: str) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
+        """テキストを解析してメタデータとセクション構造を返す
+        
+        Args:
+            text: 解析するテキスト
+            
+        Returns:
+            Tuple[Dict[str, str], List[Dict[str, Any]]]: メタデータとセクション構造のリスト
+        """
+        # メタデータとセクション構造を初期化
+        metadata = {}
+        sections = []
+        current_section = {"name": "", "bars": []}  # デフォルトセクションを初期化
+        current_content = []
+        
+        # 行ごとに処理
+        for line in text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+                
+            # メタデータ行の処理（$で始まる行のみ）
+            if line.startswith('$'):
+                key, value = self._parse_metadata_line(line)
+                metadata[key] = value
+                continue
+                
+            # セクションヘッダーの処理（[Section Name]形式）
+            if line.startswith('[') and line.endswith(']'):
+                # 前のセクションを保存
+                if current_content:
+                    current_section["bars"] = self.analyze_section_bars(current_content)
+                    sections.append(current_section)
+                    current_content = []
+                # 新しいセクションを開始
+                current_section = {"name": line[1:-1].strip(), "bars": []}
+                continue
+                
+            # セクションヘッダーの処理（#Section Name形式）
+            if line.startswith('#'):
+                # 前のセクションを保存
+                if current_content:
+                    current_section["bars"] = self.analyze_section_bars(current_content)
+                    sections.append(current_section)
+                    current_content = []
+                # 新しいセクションを開始
+                current_section = {"name": line[1:].strip(), "bars": []}
+                continue
+                
+            # 通常の行（小節）の処理
+            current_content.append(line)
+        
+        # 最後のセクションを保存
+        if current_content:
+            current_section["bars"] = self.analyze_section_bars(current_content)
+            sections.append(current_section)
+            
+        return metadata, sections
+
+    def analyze_section_bars(self, lines: List[str]) -> List[BarInfo]:
+        """小節の解析を行う
+
+        Args:
+            lines (List[str]): 解析対象の行リスト
+
+        Returns:
+            List[BarInfo]: 解析結果の小節情報リスト
         """
         if self.debug_mode:
             print("\n=== analyze_section_bars ===")
             print(f"Input lines: {lines}")
-        
+
         bars = []
-        # まずn番括弧を検出するパターン
-        repeat_start_pattern = re.compile(r'^{(\s.*)?$')
-        repeat_end_pattern = re.compile(r'^(.*\s)?}$')
-        volta_start_pattern = re.compile(r'^{(\d+)(\s.*)?$')
-        volta_end_pattern = re.compile(r'^(.*\s)?}(\d+)(\s.*)?$')  # 右側にさらにコンテンツがある可能性
-        
-        # 処理中の繰り返し情報を追跡
         current_volta_number = None
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-            
-            # ケース1: n番括弧が1行にある場合（{n content }n）
-            volta_bracket_pattern = re.compile(r'^\{(\d+)\s+(.*?)\s+\}\1(\s*\})?$')
-            match = volta_bracket_pattern.match(line)
-            if match:
-                number = int(match.group(1))
-                content = match.group(2)
-                has_repeat_end = match.group(3) is not None
-                
-                # n番括弧の情報を設定
-                bar = BarInfo(
-                    content=content,
-                    volta_number=number,
-                    volta_start=True,
-                    volta_end=True,
-                    repeat_end=has_repeat_end
-                )
-                bars.append(bar)
-                continue
-            
-            # ケース2: 繰り返し括弧が1行にある場合（{ content }）
-            repeat_bracket_pattern = re.compile(r'^\{\s+(.*?)\s+\}$')
-            match = repeat_bracket_pattern.match(line)
-            if match:
-                content = match.group(1)
-                bars.append(BarInfo(
-                    content=content,
-                    repeat_start=True,
-                    repeat_end=True
-                ))
-                continue
-            
-            # 以降の処理は複数行にまたがるケース
-            # n番括弧開始（{n または {n + コンテンツの行）
-            volta_start_match = volta_start_pattern.match(line)
-            if volta_start_match:
-                number = int(volta_start_match.group(1))
-                current_volta_number = number
-                
-                # コンテンツ部分を抽出（{n を除去）
-                prefix = f"{{{number}"
-                content = line[len(prefix):].strip()
-                
-                bars.append(BarInfo(
-                    content=content,
-                    volta_number=number,
-                    volta_start=True
-                ))
-                continue
-            
-            # n番括弧終了（}n または コンテンツ + }n の行）
-            if '}' in line and re.search(r'\}\d+', line):
-                volta_end_match = re.search(r'\}(\d+)(\s*\})?', line)
-                if volta_end_match and current_volta_number is not None:
-                    number = int(volta_end_match.group(1))
-                    has_repeat_end = volta_end_match.group(2) is not None
-                    
-                    if number != current_volta_number:
-                        raise ValueError(f"n番カッコの番号が一致しません: 開始={current_volta_number}, 終了={number}")
-                    
-                    # コンテンツ部分を抽出（}n を除去）
-                    suffix = f"}}{number}"
-                    suffix_idx = line.rfind(suffix)
-                    content = line[:suffix_idx].strip()
-                    
-                    bars.append(BarInfo(
-                        content=content,
-                        volta_number=number,
-                        volta_end=True,
-                        repeat_end=has_repeat_end
-                    ))
-                    
-                    # n番カッコ終了時に番号をリセット
-                    current_volta_number = None
-                    continue
-            
-            # 繰り返し開始の行（{ または { + コンテンツの行）
-            if line.startswith('{'):
-                if len(line) == 1:  # { だけの行
-                    content = ""
-                else:
-                    content = line[1:].strip()  # { を除去
-                
-                bars.append(BarInfo(content, repeat_start=True))
-                continue
-            
-            # 繰り返し終了の行（} または コンテンツ + } の行）
-            if line.endswith('}'):
-                if len(line) == 1:  # } だけの行
-                    content = ""
-                else:
-                    content = line[:-1].strip()  # } を除去
-                
-                bars.append(BarInfo(content, repeat_end=True))
-                continue
-            
-            # 通常の小節内容
-            if current_volta_number is not None:
-                # n番カッコ内の小節
-                bars.append(BarInfo(line, volta_number=current_volta_number))
-            else:
-                # 通常の小節
-                bars.append(BarInfo(line))
-        
+        current_volta_start = False
+        current_volta_end = False
+        current_repeat_start = False
+        current_repeat_end = False
+        in_repeat = False
+        repeat_stack = []  # 繰り返しのネストを管理するスタック
+        volta_numbers = set()  # 使用済みのn番カッコの番号を管理
+        volta_pairs = {}  # n番カッコのペアを管理 {番号: [開始位置, 終了位置]}
+        bracket_count = 0  # 括弧のネストレベルを管理
+        in_normal_repeat = False  # 通常の繰り返しの中にいるかどうか
+
         if self.debug_mode:
-            print(f"Output bars:")
+            print("\nInitial state:")
+            print(f"  current_volta_number: {current_volta_number}")
+            print(f"  volta_numbers: {volta_numbers}")
+            print(f"  repeat_stack: {repeat_stack}")
+            print(f"  bracket_count: {bracket_count}")
+            print(f"  in_normal_repeat: {in_normal_repeat}")
+
+        for i, line in enumerate(lines):
+            # 空行をスキップ
+            if not line.strip():
+                continue
+            
+            line = line.strip()
+            next_volta_number = None
+            next_volta_start = False
+            next_volta_end = False
+            next_repeat_start = False
+            next_repeat_end = False
+
+            # --- 追加: フラグ伝播用 ---
+            propagate_repeat_start = False
+            propagate_volta_start = False
+            propagate_volta_number = None
+
+            # 繰り返し開始を検出
+            if '{' in line:
+                volta_start_match = re.search(r'\{(\d+)', line)
+                if volta_start_match:
+                    # 追加: 通常の繰り返しの外にn番カッコがある場合はエラー
+                    if not in_normal_repeat:
+                        raise ParseError(f"n番カッコ {volta_start_match.group(1)} が通常の繰り返しの外にあります")
+                    next_volta_number = int(volta_start_match.group(1))
+                    next_volta_start = True
+                    next_repeat_start = True
+                    volta_numbers.add(next_volta_number)
+                    repeat_stack.append(next_volta_number)
+                    volta_pairs[next_volta_number] = [len(bars), None]
+                    current_volta_number = next_volta_number
+                    propagate_volta_start = True
+                    propagate_volta_number = next_volta_number
+                else:
+                    next_repeat_start = True
+                    in_repeat = True
+                    in_normal_repeat = True
+                    repeat_stack.append(None)
+                    propagate_repeat_start = True
+                bracket_count += line.count('{')
+
+            volta_end_match = re.search(r'}(\d+)', line)
+            if volta_end_match:
+                next_volta_number = int(volta_end_match.group(1))
+                next_volta_end = True
+                next_repeat_end = True
+                bracket_count -= line.count('}')
+                if next_volta_number in volta_pairs:
+                    volta_pairs[next_volta_number][1] = len(bars)
+                if repeat_stack:
+                    repeat_stack.pop()
+                if repeat_stack:
+                    current_volta_number = repeat_stack[-1] if repeat_stack[-1] is not None else None
+                else:
+                    current_volta_number = None
+            elif '}' in line:
+                next_repeat_end = True
+                bracket_count -= line.count('}')
+                if repeat_stack:
+                    if repeat_stack[-1] is None:
+                        in_normal_repeat = False
+                    repeat_stack.pop()
+                if not repeat_stack:
+                    in_repeat = False
+                    in_normal_repeat = False
+                    current_volta_number = None
+                else:
+                    current_volta_number = repeat_stack[-1] if repeat_stack[-1] is not None else None
+
+            # --- ここから小節内容の処理 ---
+            content = line
+            if next_volta_start:
+                content = re.sub(r'\{(\d+)\s*', '', content)
+            if next_volta_end:
+                content = re.sub(r'\s*}(\d+)', '', content)
+            if next_repeat_start and not next_volta_start:
+                content = re.sub(r'{\s*', '', content)
+            if next_repeat_end and not next_volta_end:
+                content = re.sub(r'\s*}', '', content)
+            content = re.sub(r'[{}]', '', content)
+            content = content.strip()
+
+            # --- propagateフラグの伝播 ---
+            if not content:
+                # 記号行自体は小節として追加しない
+                continue
+            # propagateフラグが立っている場合は、次の小節にフラグを伝播
+            repeat_start_flag = next_repeat_start or propagate_repeat_start or (len(bars) == 0 and in_repeat)
+            volta_start_flag = next_volta_start or propagate_volta_start
+            volta_number_val = None
+            if next_volta_start or propagate_volta_start:
+                volta_number_val = next_volta_number if next_volta_start else propagate_volta_number
+            elif next_volta_end:
+                volta_number_val = next_volta_number
+            elif current_volta_number is not None and in_normal_repeat:
+                volta_number_val = current_volta_number
+
+            bar_info = BarInfo(
+                content=content,
+                repeat_start=repeat_start_flag,
+                repeat_end=next_repeat_end,
+                volta_number=volta_number_val,
+                volta_start=volta_start_flag,
+                volta_end=next_volta_end
+            )
+            bars.append(bar_info)
+
+            # 状態の更新
+            if next_volta_number is not None:
+                current_volta_number = next_volta_number
+            current_volta_start = next_volta_start
+            current_volta_end = next_volta_end
+            current_repeat_start = next_repeat_start
+            current_repeat_end = next_repeat_end
+
+            # 括弧の更新
+            if next_repeat_end:
+                if bracket_count == 0:
+                    in_normal_repeat = False
+
+        # n番カッコのペアチェック（最後に未完了のペアがないか確認）
+        if self.debug_mode:
+            print("\n=== Debug Info ===")
+            print(f"volta_numbers: {volta_numbers}")
+            print(f"volta_pairs: {volta_pairs}")
+            print(f"len(volta_numbers): {len(volta_numbers)}")
+            print(f"len(volta_pairs): {len(volta_pairs)}")
+            print(f"final bracket_count: {bracket_count}")
+
+        # 全てのn番カッコが正しく閉じられているか確認
+        for number, positions in volta_pairs.items():
+            if positions[1] is None:
+                positions[1] = len(bars)  # 終了位置が設定されていない場合は最後の小節を使用
+
+        # 括弧のネストレベルが0でない場合はエラー
+        if bracket_count != 0:
+            raise ParseError("括弧のネストが正しく閉じられていません")
+
+        if self.debug_mode:
+            print("Output bars:")
             for i, bar in enumerate(bars):
                 print(f"  Bar {i}:")
                 print(f"    content: '{bar.content}'")
@@ -245,7 +387,7 @@ class StructureAnalyzer:
                 print(f"    volta_number: {bar.volta_number}")
                 print(f"    volta_start: {bar.volta_start}")
                 print(f"    volta_end: {bar.volta_end}")
-        
+
         return bars
 
     def _parse_section_header(self, line: str) -> str:
@@ -270,30 +412,7 @@ class StructureAnalyzer:
             
         return name 
 
-    def analyze(self, text: str) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
-        """テキストからメタデータとセクション構造を抽出
-        
-        Args:
-            text: 前処理済みのテキスト
-            
-        Returns:
-            Tuple[Dict[str, str], List[Dict[str, Any]]]: メタデータとセクション構造のタプル
-        """
-        structure = self.extract_structure(text)
-        sections_data = []
-        
-        for section in structure.sections:
-            # 各セクションの小節情報を解析
-            bars = self.analyze_section_bars(section.content)
-            
-            sections_data.append({
-                'name': section.name,
-                'content': section.content,
-                'bars': bars  # BarInfoオブジェクトのリストをそのまま使用
-            })
-        
-        return structure.metadata, sections_data
-
     def _extract_structure(self, text: str) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
         """extract_structureのエイリアス（後方互換性のため）"""
+        return self.extract_structure(text) 
         return self.extract_structure(text) 

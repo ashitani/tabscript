@@ -26,6 +26,7 @@ def test_parse_simple_file():
     # パース
     parser = Parser()
     score = parser.parse(tabscript_text)
+
     
     # 検証
     assert score.title == "シンプルな例"
@@ -59,7 +60,9 @@ def test_parse_with_repeat_marks():
     $tuning="guitar"
     
     [Section A]
-    { 1-0:4 1-2:4 2-0:4 2-2:4 }
+    { 
+    1-0:4 1-2:4 2-0:4 2-2:4 
+    }
     """
     
     parser = Parser(debug_mode=True)
@@ -137,8 +140,8 @@ def test_repeat_symbols_not_as_notes():
 
 
 def test_volta_bracket_not_as_notes():
-    """n番括弧が音符としてパースされないことをテスト"""
-    # n番括弧を含むタブ譜
+    """n番カッコが音符としてパースされないことをテスト（n番カッコは無印カッコの内部に配置）"""
+    # n番カッコを含むタブ譜（n番カッコは無印カッコの内部に配置）
     tab_content = """
     $title="Volta Test"
     $tuning="guitar"
@@ -166,13 +169,13 @@ def test_volta_bracket_not_as_notes():
         for column in section.columns:
             for bar in column.bars:
                 for note in bar.notes:
-                    # 音符のfret属性にn番括弧が含まれていないことを確認
-                    assert note.fret != '{1', "n番括弧開始記号'{1'が音符としてパースされています"
-                    assert note.fret != '1}', "n番括弧終了記号'1}'が音符としてパースされています"
-                    assert note.fret != '{2', "n番括弧開始記号'{2'が音符としてパースされています"
-                    assert note.fret != '2}', "n番括弧終了記号'2}'が音符としてパースされています"
+                    # 音符のfret属性にn番カッコが含まれていないことを確認
+                    assert note.fret != '{1', "n番カッコ開始記号'{1'が音符としてパースされています"
+                    assert note.fret != '1}', "n番カッコ終了記号'1}'が音符としてパースされています"
+                    assert note.fret != '{2', "n番カッコ開始記号'{2'が音符としてパースされています"
+                    assert note.fret != '2}', "n番カッコ終了記号'2}'が音符としてパースされています"
     
-    # n番括弧は小節の属性として設定されているはず
+    # n番カッコは小節の属性として設定されているはず
     test_section = score.sections[0]
     
     # volta_numberが1と2の小節が存在することを確認
@@ -359,14 +362,16 @@ def test_complex_score():
     $tuning = "guitar"
     $beat = "4/4"
     $bars_per_line = "2"
-    
+
     [イントロ]
     {
     1-0:8 1-2:8 1-3:8 1-5:8 2-0:8 2-2:8 2-3:8 2-5:8
     3-0:8 3-2:8 3-3:8 3-5:8 4-0:8 4-2:8 4-3:8 4-5:8
     }
-    
+
     [Aメロ]
+    {
+    {
     {1
     1-0:4 1-2:4 2-0:4 2-2:4
     3-0:4 3-2:4 4-0:4 4-2:4
@@ -375,7 +380,9 @@ def test_complex_score():
     1-3:4 1-5:4 2-3:4 2-5:4
     3-3:4 3-5:4 4-3:4 4-5:4
     2}
-    
+    }
+    }
+
     [Bメロ]
     (1-0 2-2 3-2 4-2 5-0 6-0):4 (1-3 2-3 3-0 4-0 5-2 6-3):4
     (1-2 2-0 3-0 4-0 5-2 6-3):4 (1-0 2-2 3-2 4-2 5-0 6-0):4

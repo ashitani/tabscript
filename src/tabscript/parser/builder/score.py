@@ -68,10 +68,10 @@ class ScoreBuilder:
                     # 拍子が変わったら記録
                     if bar.beat != current_beat:
                         current_beat = bar.beat
-                
                 # 小節リストをbars_per_line単位でColumnに分割
                 self._organize_bars_into_columns(section, bars, score.bars_per_line, current_beat)
-                
+                # 追加: Sectionの_bars属性に全小節をセット
+                section._bars = bars
         else:
             # 辞書形式 {"Section A": [...], ...}
             for section_name, bar_infos in section_bar_infos.items():
@@ -86,9 +86,10 @@ class ScoreBuilder:
                     # 拍子が変わったら記録
                     if bar.beat != current_beat:
                         current_beat = bar.beat
-                
                 # 小節リストをbars_per_line単位でColumnに分割
                 self._organize_bars_into_columns(section, bars, score.bars_per_line, current_beat)
+                # 追加: Sectionの_bars属性に全小節をセット
+                section._bars = bars
         
         return score
     

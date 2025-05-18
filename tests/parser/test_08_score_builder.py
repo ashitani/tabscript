@@ -7,6 +7,10 @@ from tabscript.exceptions import ParseError
 class TestScoreBuilder:
     """ScoreBuilderのテスト"""
     
+    def setup_method(self, method):
+        """各テストメソッドの前に実行されるセットアップ"""
+        self.builder = ScoreBuilder()
+    
     def test_build_score(self):
         """スコア構築の基本動作をテスト"""
         builder = ScoreBuilder()
@@ -200,10 +204,10 @@ class TestScoreBuilder:
             {
                 "name": "Section A",
                 "bars": [
-                    BarInfo("1-1:4 2-2:4", repeat_start=True),
-                    BarInfo("3-3:4 4-4:4", volta_number=1, volta_start=True, volta_end=True),
-                    BarInfo("5-5:4 6-6:4", volta_number=2, volta_start=True, volta_end=True),
-                    BarInfo("7-7:4 8-8:4", repeat_end=True)
+                    BarInfo("1-1:4 2-2:4", repeat_start=True),  # 無印カッコ開始
+                    BarInfo("3-3:4 4-4:4", volta_number=1, volta_start=True, volta_end=True),  # 1番カッコ
+                    BarInfo("5-5:4 6-6:4", volta_number=2, volta_start=True, volta_end=True),  # 2番カッコ
+                    BarInfo("7-7:4 8-8:4", repeat_end=True)  # 無印カッコ終了
                 ]
             }
         ]
@@ -212,15 +216,20 @@ class TestScoreBuilder:
         
         section = score.sections[0]
         
+        # 無印カッコの検証
         assert section.columns[0].bars[0].is_repeat_start
+        assert section.columns[0].bars[3].is_repeat_end
+        
+        # 1番カッコの検証
         assert section.columns[0].bars[1].volta_number == 1
         assert section.columns[0].bars[1].volta_start
         assert section.columns[0].bars[1].volta_end
+        
+        # 2番カッコの検証
         assert section.columns[0].bars[2].volta_number == 2
         assert section.columns[0].bars[2].volta_start
         assert section.columns[0].bars[2].volta_end
-        assert section.columns[0].bars[3].is_repeat_end
-
+    
     def test_complex_score_structure(self):
         """複雑なスコア構造をテスト"""
         builder = ScoreBuilder()
@@ -363,10 +372,12 @@ class TestScoreBuilder:
             {
                 'name': 'Aメロ',
                 'content': [
+                    "{",  # 無印カッコ開始
                     "{1 1-0:4 1-2:4 2-0:4 2-2:4",
                     "3-0:4 3-2:4 4-0:4 4-2:4 }1",
                     "{2 1-3:4 1-5:4 2-3:4 2-5:4",
-                    "3-3:4 3-5:4 4-3:4 4-5:4 }2"
+                    "3-3:4 3-5:4 4-3:4 4-5:4 }2",
+                    "}"  # 無印カッコ終了
                 ]
             }
         ]
@@ -440,10 +451,10 @@ class TestScoreBuilder:
         
         # 音符の検証
         notes = bar.notes
-        assert notes[0].string == 5 and notes[0].fret == 1
-        assert notes[1].string == 4 and notes[1].fret == 2
-        assert notes[2].string == 3 and notes[2].fret == 3
-        assert notes[3].string == 2 and notes[3].fret == 4
+        assert notes[0].string == 5 and notes[0].fret == "1"
+        assert notes[1].string == 4 and notes[1].fret == "2"
+        assert notes[2].string == 3 and notes[2].fret == "3"
+        assert notes[3].string == 2 and notes[3].fret == "4"
         
         # メタデータの検証
         assert score.title == "Test Song"
@@ -532,4 +543,143 @@ class TestScoreBuilder:
         # メタデータの検証
         assert score.title == "Test Song"
         assert score.tuning == "guitar"
-        assert score.beat == "4/4" 
+        assert score.beat == "4/4"
+
+    def test_repeat_symbols_not_as_notes(self):
+        """繰り返し記号が音符としてパースされないことをテスト"""
+        tab_content = """
+        $title="Repeat Test"
+        $tuning="guitar"
+        $beat="4/4"
+
+        [Test]
+        {
+        1-1:4 2-2:4
+        }
+        """
+        # メタデータとセクションを解析
+        analyzer = StructureAnalyzer()
+        metadata, sections = analyzer.analyze(tab_content)
+        
+        # スコアを構築
+        score = self.builder.build_score(metadata, sections)
+        
+        # 全ての音符のfret属性をチェック
+        for section in score.sections:
+            for column in section.columns:
+                for bar in column.bars:
+                    for note in bar.notes:
+                        # 音符のfret属性に繰り返し記号が含まれていないことを確認
+                        assert note.fret != '{', "繰り返し開始記号'{'が音符としてパースされています"
+                        assert note.fret != '}', "繰り返し終了記号'}'が音符としてパースされています"
+        
+        # 代わりに繰り返し記号は小節の属性として設定されているはず
+        test_section = score.sections[0]
+        assert len(test_section.columns) > 0, "カラムが存在しません"
+        
+        # 各小節の繰り返し記号フラグをチェック
+        first_column = test_section.columns[0]
+        assert len(first_column.bars) > 0, "小節が存在しません"
+        
+        # 少なくとも1つの小節がis_repeat_start=Trueであること
+        assert any(bar.is_repeat_start for bar in test_section.get_all_bars()), "繰り返し開始フラグが設定されていません"
+
+    def test_volta_bracket_not_as_notes(self):
+        """n番括弧が音符としてパースされないことをテスト"""
+        tab_content = """
+        $title="Volta Test"
+        $tuning="guitar"
+        $beat="4/4"
+
+        [Test]
+        {
+        1-1:4 2-2:4
+
+        {1
+        3-3:4 4-4:4
+        1}
+
+        {2
+        5-5:4 6-6:4
+        2}
+        }
+        """
+        # メタデータとセクションを解析
+        analyzer = StructureAnalyzer()
+        metadata, sections = analyzer.analyze(tab_content)
+        
+        # スコアを構築
+        score = self.builder.build_score(metadata, sections)
+        
+        # 全ての音符のfret属性をチェック
+        for section in score.sections:
+            for column in section.columns:
+                for bar in column.bars:
+                    for note in bar.notes:
+                        # 音符のfret属性にn番括弧が含まれていないことを確認
+                        assert note.fret != '{1', "n番括弧開始記号'{1'が音符としてパースされています"
+                        assert note.fret != '1}', "n番括弧終了記号'1}'が音符としてパースされています"
+                        assert note.fret != '{2', "n番括弧開始記号'{2'が音符としてパースされています"
+                        assert note.fret != '2}', "n番括弧終了記号'2}'が音符としてパースされています"
+        
+        # n番括弧は小節の属性として設定されているはず
+        test_section = score.sections[0]
+        
+        # volta_numberが1と2の小節が存在することを確認
+        all_bars = test_section.get_all_bars()
+        volta_numbers = [bar.volta_number for bar in all_bars if bar.volta_number is not None]
+        assert 1 in volta_numbers, "volta_number=1の小節が存在しません"
+        assert 2 in volta_numbers, "volta_number=2の小節が存在しません"
+
+    def test_complex_score(self):
+        """複雑なスコアをパースできることをテスト"""
+        tab_content = """
+        $title="複雑なスコア"
+        $tuning="guitar"
+        $beat="4/4"
+        $bars_per_line="2"
+
+        [イントロ]
+        {
+        1-0:8 1-2:8 1-3:8 1-5:8 2-0:8 2-2:8 2-3:8 2-5:8
+        3-0:8 3-2:8 3-3:8 3-5:8 4-0:8 4-2:8 4-3:8 4-5:8
+        }
+
+        [Aメロ]
+        {
+        {1
+        1-0:4 1-2:4 2-0:4 2-2:4
+        3-0:4 3-2:4 4-0:4 4-2:4
+        1}
+        {2
+        1-3:4 1-5:4 2-3:4 2-5:4
+        3-3:4 3-5:4 4-3:4 4-5:4
+        2}
+        }
+
+        [Bメロ]
+        (1-0 2-2 3-2 4-2 5-0 6-0):4 (1-3 2-3 3-0 4-0 5-2 6-3):4
+        (1-2 2-0 3-0 4-0 5-2 6-3):4 (1-0 2-2 3-2 4-2 5-0 6-0):4
+        """
+        # メタデータとセクションを解析
+        analyzer = StructureAnalyzer()
+        metadata, sections = analyzer.analyze(tab_content)
+        
+        # スコアを構築
+        score = self.builder.build_score(metadata, sections)
+        
+        # セクションの存在を確認
+        assert len(score.sections) == 3, "セクション数が正しくありません"
+        assert score.sections[0].name == "イントロ", "イントロセクションが正しくありません"
+        assert score.sections[1].name == "Aメロ", "Aメロセクションが正しくありません"
+        assert score.sections[2].name == "Bメロ", "Bメロセクションが正しくありません"
+        
+        # 各セクションの小節数を確認
+        intro_bars = score.sections[0].get_all_bars()
+        assert len(intro_bars) > 0, "イントロセクションに小節がありません"
+        
+        a_melody_bars = score.sections[1].get_all_bars()
+        assert len(a_melody_bars) > 0, "Aメロセクションに小節がありません"
+        
+        b_melody_bars = score.sections[2].get_all_bars()
+        assert len(b_melody_bars) > 0, "Bメロセクションに小節がありません" 

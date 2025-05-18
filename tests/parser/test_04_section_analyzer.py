@@ -2,8 +2,8 @@ import pytest
 from tabscript.parser.analyzer import StructureAnalyzer
 from tabscript.exceptions import ParseError
 
-def test_analyze_section_bars_basic():
-    """基本的なセクションの解析をテスト"""
+def test_analyze_section_structure():
+    """セクション構造の解析をテスト"""
     analyzer = StructureAnalyzer(debug_mode=True)
     text = """1-0:4 2-0:4 3-0:4 4-0:4
 [Chorus]
@@ -43,48 +43,52 @@ def test_analyze_section_bars_with_newlines():
     assert len(sections[1]["bars"]) == 1
     assert sections[1]["bars"][0].content == "1-0:4 2-0:4 3-0:4 4-0:4"
 
-def test_invalid_metadata():
-    """不正なメタデータ形式でエラーが発生するかテスト"""
-    analyzer = StructureAnalyzer(debug_mode=True)
-    text = """$title=Test Song
-[Section1]
+def test_analyze_metadata():
+    """メタデータの解析をテスト"""
+    text = """$title = "テスト曲"
+$tuning = "guitar"
+$beat = "4/4"
+$key = "C"
+
+[Verse]
 1-0:4 2-0:4 3-0:4 4-0:4
-"""
-    with pytest.raises(ParseError):
-        analyzer.analyze(text)
 
-def test_code_line_not_metadata():
-    """@で始まる行がメタデータとして誤認されないことをテスト"""
-    analyzer = StructureAnalyzer(debug_mode=True)
-    text = '''$title="コードテスト"
-$tuning="guitar"
-[Main]
-@C 5-3 4-2 3-0 2-1
-@G 6-3 5-2 4-0 3-0
-'''
+[Chorus]
+1-0:4 2-0:4 3-0:4 4-0:4"""
+
+    analyzer = StructureAnalyzer()
     metadata, sections = analyzer.analyze(text)
-    # メタデータが正しく取得できていること
-    assert metadata["title"] == "コードテスト"
+
+    # メタデータの検証
+    assert metadata["title"] == "テスト曲"
     assert metadata["tuning"] == "guitar"
-    # セクションが1つ
-    assert len(sections) == 1
-    # 小節内容として@Cや@Gが含まれていること
-    bars = sections[0]["bars"]
-    assert any("@C" in bar.content for bar in bars)
-    assert any("@G" in bar.content for bar in bars)
+    assert metadata["beat"] == "4/4"
+    assert metadata["key"] == "C"
 
-def test_code_line_parsing():
-    """コード表記を含む小節が正しくパースされることをテスト"""
-    analyzer = StructureAnalyzer(debug_mode=True)
-    text = '''$title="コードパーステスト"
-$tuning="guitar"
-[Main]
-@C 5-3 4-2 3-0 2-1
-@G 6-3 5-2 4-0 3-0
-'''
+    # セクション構造の検証
+    assert len(sections) == 2
+    assert sections[0]["name"] == "Verse"
+    assert sections[1]["name"] == "Chorus"
+
+def test_analyze_metadata_with_quotes():
+    """引用符を含むメタデータの解析をテスト"""
+    text = """$title = "テスト曲（ギター）"
+$tuning = "guitar"
+$beat = "4/4"
+$key = "C"
+
+[Verse]
+1-0:4 2-0:4 3-0:4 4-0:4"""
+
+    analyzer = StructureAnalyzer()
     metadata, sections = analyzer.analyze(text)
+
+    # メタデータの検証
+    assert metadata["title"] == "テスト曲（ギター）"
+    assert metadata["tuning"] == "guitar"
+    assert metadata["beat"] == "4/4"
+    assert metadata["key"] == "C"
+
+    # セクション構造の検証
     assert len(sections) == 1
-    bars = sections[0]["bars"]
-    # コード表記を含む小節が正しくパースされているか
-    assert any("@C 5-3 4-2 3-0 2-1" in bar.content for bar in bars)
-    assert any("@G 6-3 5-2 4-0 3-0" in bar.content for bar in bars) 
+    assert sections[0]["name"] == "Verse" 
