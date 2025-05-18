@@ -89,29 +89,35 @@ class Parser:
         Returns:
             Score: パースされたスコアオブジェクト
         """
-        # ファイルパスの場合はファイルを読み込む
-        if os.path.isfile(text_or_file):
-            with open(text_or_file, 'r', encoding='utf-8') as f:
-                text = f.read()
-        else:
-            text = text_or_file
-        
-        self.debug_print(f"Parsing text: {len(text)} characters")
-        
-        # テキストの前処理
-        preprocessed_text = self._preprocessor.preprocess(text)
-        
-        # 構造解析
-        metadata, sections = self._analyzer.analyze(preprocessed_text)
-        
-        # バリデーション（一時的にスキップ）
-        # if not self.skip_validation:
-        #     self._validator.validate(metadata, sections)
-        
-        # スコア構築
-        self.score = self._score_builder.build_score(metadata, sections)
-        
-        return self.score
+        try:
+            # ファイルパスの場合はファイルを読み込む
+            if os.path.isfile(text_or_file):
+                with open(text_or_file, 'r', encoding='utf-8') as f:
+                    text = f.read()
+            else:
+                text = text_or_file
+            
+            self.debug_print(f"Parsing text: {len(text)} characters")
+            
+            # テキストの前処理
+            preprocessed_text = self._preprocessor.preprocess(text)
+            
+            # 構造解析
+            metadata, sections = self._analyzer.analyze(preprocessed_text)
+            
+            # バリデーション（一時的にスキップ）
+            # if not self.skip_validation:
+            #     self._validator.validate(metadata, sections)
+            
+            # スコア構築
+            self.score = self._score_builder.build_score(metadata, sections)
+            self.score.is_valid = True
+            
+            return self.score
+        except ParseError as e:
+            # エラーが発生した場合は無効なスコアを返す
+            self.score = Score(is_valid=False)
+            raise e
 
     def _preprocess_text(self, text: str) -> str:
         """テキストの前処理を行う（互換性のため）"""

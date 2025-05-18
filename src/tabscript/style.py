@@ -42,6 +42,8 @@ class StyleManager:
             "volta_margin": 0.5 * mm,        # ボルタブラケットの小節境界からのマージン
             "string_bottom_margin": 1 * mm,  # 1弦からの下マージン（ボルタ線など）
             "triplet_offset": 4.5*mm,          # 三連符記号のオフセット
+            "single_repeat_size": 2 * mm,      # 1小節リピート記号のサイズ
+            "single_repeat_offset": 1 * mm,    # 1小節リピート記号のオフセット
         }
         
         # スタイル設定ファイルが指定されていれば読み込む

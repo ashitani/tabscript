@@ -423,6 +423,17 @@ class Renderer:
             total_steps = sum(note.step for note in bar.notes)
             self.debug_print(f"  total_steps: {total_steps}")
             
+            # 空の小節の場合はスキップ
+            if not bar.notes:
+                self.debug_print("  Skipping empty bar")
+                current_x += bar_width
+                continue
+            
+            # total_stepsが0の場合は最小値（1）を使用
+            if total_steps == 0:
+                total_steps = 1
+                self.debug_print("  Warning: total_steps was 0, using minimum value of 1")
+            
             # このステップ幅で描画（前後の余白を考慮）
             # 繰り返し記号のためのマージンを追加（左右に2mm）
             repeat_margin = 2.0 * mm if bar.is_repeat_start or bar.is_repeat_end else 0
@@ -577,6 +588,27 @@ class Renderer:
                     elif not note.is_chord:
                         self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret, note.connect_next)
                 note_x += note_width
+            
+            # 1小節リピート記号の描画
+            if bar.is_repeat_symbol and bar.repeat_bars == 1:
+                # 小節の中央に配置
+                center_x = current_x + (bar_width / 2)
+                center_y = (y_positions[0] + y_positions[-1]) / 2
+                
+                # 記号のサイズとオフセットを取得
+                size = self.style_manager.get("single_repeat_size")
+                offset = self.style_manager.get("single_repeat_offset")
+                
+                # ・/・の形を描画
+                # 左のドット
+                self.canvas.circle(center_x - offset, center_y, size/2, fill=1)
+                # 右のドット
+                self.canvas.circle(center_x + offset, center_y, size/2, fill=1)
+                # 斜めの線
+                self.canvas.line(
+                    center_x - offset + size/2, center_y - size/2,
+                    center_x + offset - size/2, center_y + size/2
+                )
             
             # 繰り返し終了記号の描画
             if bar.is_repeat_end:

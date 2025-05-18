@@ -40,6 +40,8 @@ class BarInfo:
     volta_number: Optional[int] = None
     volta_start: bool = False
     volta_end: bool = False
+    is_repeat_symbol: bool = False  # ...記号かどうか
+    repeat_bars: Optional[int] = None  # リピートする小節数
 
 class StructureAnalyzer:
     def __init__(self, debug_mode=False, debug_level=0):
@@ -249,11 +251,39 @@ class StructureAnalyzer:
             propagate_volta_start = False
             propagate_volta_number = None
 
+            # ...記号の処理
+            if line.startswith('...'):
+                # ...の後ろに数字がある場合
+                rest = line[3:].strip()
+                if rest == '':
+                    repeat_bars = 1
+                elif rest.isdigit():
+                    repeat_bars = int(rest)
+                else:
+                    # ...の後ろに数字以外があればエラー（音符やコード混在）
+                    raise ParseError("リピート記号の行に音符やコードを含めることはできません")
+                # リピート記号の前に小節が存在することを確認
+                if not bars:
+                    raise ParseError("リピート記号の前に小節が必要です")
+                # リピートする小節数が実際の小節数と一致することを確認
+                if repeat_bars > len(bars):
+                    raise ParseError(f"リピートする小節数({repeat_bars})が実際の小節数({len(bars)})を超えています")
+                # 無効なリピート回数（1未満）はエラー
+                if repeat_bars < 1:
+                    raise ParseError("リピート回数は1以上である必要があります")
+                # リピート記号の小節を追加
+                bar_info = BarInfo(
+                    content='',
+                    is_repeat_symbol=True,
+                    repeat_bars=repeat_bars
+                )
+                bars.append(bar_info)
+                continue
+
             # 繰り返し開始を検出
             if '{' in line:
                 volta_start_match = re.search(r'\{(\d+)', line)
                 if volta_start_match:
-                    # 追加: 通常の繰り返しの外にn番カッコがある場合はエラー
                     if not in_normal_repeat:
                         raise ParseError(f"n番カッコ {volta_start_match.group(1)} が通常の繰り返しの外にあります")
                     next_volta_number = int(volta_start_match.group(1))
@@ -270,7 +300,6 @@ class StructureAnalyzer:
                     in_repeat = True
                     in_normal_repeat = True
                     repeat_stack.append(None)
-                    propagate_repeat_start = True
                 bracket_count += line.count('{')
 
             volta_end_match = re.search(r'}(\d+)', line)
@@ -300,6 +329,12 @@ class StructureAnalyzer:
                     current_volta_number = None
                 else:
                     current_volta_number = repeat_stack[-1] if repeat_stack[-1] is not None else None
+
+            # ...記号の不正な位置や混在のエラー判定
+            if '...' in line and not line.startswith('...'):
+                raise ParseError("リピート記号は行頭にのみ記述できます")
+            if line.startswith('@') and '...' in line:
+                raise ParseError("リピート記号とコードを同時に記述することはできません")
 
             # --- ここから小節内容の処理 ---
             content = line

@@ -144,73 +144,83 @@ class ScoreBuilder:
         name = match.group(1)
         return Section(name=name)
     
-    def parse_lines(self, lines: List[str]) -> Score:
-        """TabScriptの複数行をパースしてスコアを構築する
+    def parse_lines(self, lines):
+        """行をパースしてScoreオブジェクトを返す
         
         Args:
             lines: パースする行のリスト
-            
+        
         Returns:
-            Score: 構築されたスコアオブジェクト
+            Score: パースされたスコアオブジェクト
         """
-        # スコアの初期化
+        self.debug_print(f"Parsing {len(lines)} lines")
+        
+        # スコアオブジェクトを作成
         score = Score()
+        
+        # 現在のセクションとカラム
         current_section = None
         current_column = None
+        current_bars = []
         
-        # 行ごとに処理
-        for line_num, line in enumerate(lines, 1):
-            self.current_line = line_num
-            line = line.strip()
+        # 行をパース
+        for line in lines:
+            self.debug_print(f"Parsing line: {line}")
             
-            # 空行のスキップ
-            if not line:
+            # 空行をスキップ
+            if not line.strip():
                 continue
             
-            # メタデータの処理
+            # メタデータ行の処理
             if line.startswith('$'):
                 key, value = self.parse_metadata_line(line)
-                if key == "title":
+                if key == 'title':
                     score.title = value
-                elif key == "tuning":
+                elif key == 'tuning':
                     score.tuning = value
-                    self.bar_builder.set_tuning(value)
-                elif key == "beat":
+                elif key == 'beat':
                     score.beat = value
-                elif key == "section":
+                elif key == 'bars_per_line':
+                    score.bars_per_line = int(value)
+                elif key == 'section':
+                    # 現在のセクションの小節を処理
+                    if current_section and current_bars:
+                        self._organize_bars_into_columns(current_section, current_bars, score.bars_per_line, score.beat)
+                        current_bars = []
+                    
                     # 新しいセクションを作成
-                    section = Section(name=value)
-                    score.sections.append(section)
-                    current_section = section
-                    current_column = None  # カラムをリセット
-                # その他のメタデータは無視
+                    current_section = Section(value)
+                    score.sections.append(current_section)
+                    current_column = None
                 continue
             
-            # セクションヘッダーの処理
-            if line.startswith('['):
-                section = self.parse_section_header(line)
-                score.sections.append(section)
-                current_section = section
-                current_column = None  # カラムをリセット
-                continue
-            
-            # セクションがない場合は自動的にデフォルトセクションを作成
-            if not current_section:
-                current_section = Section(name="")
+            # セクション行の処理
+            if line.startswith('[') and line.endswith(']'):
+                # 現在のセクションの小節を処理
+                if current_section and current_bars:
+                    self._organize_bars_into_columns(current_section, current_bars, score.bars_per_line, score.beat)
+                    current_bars = []
+                
+                current_section = self.parse_section_header(line)
                 score.sections.append(current_section)
-                current_column = None  # カラムをリセット
+                current_column = None
+                continue
+            
+            # セクションが未定義の場合はデフォルトセクションを作成
+            if not current_section:
+                current_section = Section("Default")
+                score.sections.append(current_section)
+                current_column = None
             
             # 小節行の処理
-            self.bar_builder.current_line = self.current_line
-            bar = self.bar_builder.parse_bar_line(line)
-            
-            # カラムの初期化または更新
-            if not current_column or len(current_column.bars) >= score.bars_per_line:
-                current_column = Column(bars=[], bars_per_line=score.bars_per_line, beat=score.beat)
-                current_section.columns.append(current_column)
-            
-            # 小節をカラムに追加
-            current_column.bars.append(bar)
+            if line.strip():
+                bar = self.parse_bar_line(line)
+                if bar:
+                    current_bars.append(bar)
+        
+        # 最後のセクションの小節を処理
+        if current_section and current_bars:
+            self._organize_bars_into_columns(current_section, current_bars, score.bars_per_line, score.beat)
         
         return score
     
@@ -247,21 +257,26 @@ class ScoreBuilder:
         
         return notes
     
-    def parse_bar_line(self, line: str) -> Bar:
-        """小節行をパースしてBarオブジェクトを返す（互換性のため）"""
-        # 状態をBarBuilderに設定
-        self.bar_builder.last_string = self.last_string
-        self.bar_builder.last_duration = self.last_duration
-        self.bar_builder.current_line = self.current_line
+    def parse_bar_line(self, line: str) -> Optional[Bar]:
+        """小節行をパースする
         
-        # BarBuilderを使用して小節をパース
-        bar = self.bar_builder.parse_bar_line(line)
+        Args:
+            line: パースする小節行
+            
+        Returns:
+            Optional[Bar]: パースされた小節オブジェクト、または無効な行の場合はNone
+        """
+        # 空行や無効な行はスキップ
+        if not line.strip():
+            return None
         
-        # 状態を同期
-        self.last_string = self.bar_builder.last_string
-        self.last_duration = self.bar_builder.last_duration
-        
-        return bar
+        # 小節をパース
+        try:
+            bar = self.bar_builder.parse_bar_line(line)
+            return bar
+        except ParseError as e:
+            self.debug_print(f"Error parsing bar line: {e}")
+            return None
     
     def _calculate_note_step(self, note: Note) -> None:
         """音符のステップ数を計算する（互換性のため）"""
@@ -278,7 +293,10 @@ class ScoreBuilder:
             notes=[],  # 初期値は空のリスト
             beat=current_beat or getattr(bar_info, 'beat', '4/4')
         )
-        
+        # is_repeat_symbol, repeat_bars, is_dummyをコピー
+        bar.is_repeat_symbol = getattr(bar_info, 'is_repeat_symbol', False)
+        bar.repeat_bars = getattr(bar_info, 'repeat_bars', None)
+        bar.is_dummy = getattr(bar_info, 'is_repeat_symbol', False)  # ...記号小節ならTrue
         # コンテンツがある場合は解析
         if hasattr(bar_info, 'content') and bar_info.content:
             # BarBuilderを使用して音符を解析
@@ -286,14 +304,11 @@ class ScoreBuilder:
             self.bar_builder.current_line = self.current_line
             parsed_bar = self.bar_builder.parse_bar_line(content)
             bar.notes = parsed_bar.notes
-        
         # 繰り返し記号の設定
         bar.is_repeat_start = getattr(bar_info, 'repeat_start', False)
         bar.is_repeat_end = getattr(bar_info, 'repeat_end', False)
-        
         # n番括弧の設定
         bar.volta_number = getattr(bar_info, 'volta_number', None)
         bar.volta_start = getattr(bar_info, 'volta_start', False)
         bar.volta_end = getattr(bar_info, 'volta_end', False)
-        
         return bar 

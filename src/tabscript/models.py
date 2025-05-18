@@ -44,6 +44,9 @@ class Bar:
     volta_start: bool = False  # n番カッコの開始かどうか
     volta_end: bool = False  # n番カッコの終了かどうか
     chord: Optional[str] = None  # コード名
+    is_repeat_symbol: bool = False  # ...記号かどうか
+    repeat_bars: Optional[int] = None  # リピートする小節数
+    is_dummy: bool = False  # ...記号小節用のダミーフラグ
 
     def __post_init__(self):
         if self.notes is None:
@@ -88,6 +91,7 @@ class Score:
     beat: str = "4/4"  # デフォルトは4/4拍子
     bars_per_line: int = 4  # デフォルトは1行あたり4小節
     sections: List[Section] = None
+    is_valid: bool = True  # パースが成功したかどうか
 
     def __post_init__(self):
         if self.sections is None:
