@@ -248,6 +248,13 @@ class Renderer:
                         else:
                             lines[i] += "----"
                 
+                # 連符の場合は音符の長さを調整
+                if hasattr(note, 'tuplet') and note.tuplet:
+                    # 連符の場合は音符の長さを2/3に（三連符の場合）
+                    for i in range(1, len(lines)):
+                        if len(lines[i]) > 0:
+                            lines[i] = lines[i][:-2]  # 最後の2文字を削除
+                
                 current_pos = len(lines[1])  # 音符の後の位置を更新
             
             # コード行の長さを他の行に合わせる

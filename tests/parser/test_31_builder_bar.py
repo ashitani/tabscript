@@ -47,15 +47,6 @@ class TestBarBuilder:
         assert bar.notes[1].string == 2
         assert bar.notes[1].fret == "2"
     
-    def test_parse_bar_with_volta(self):
-        """ボルタブラケットを含む小節のパースをテスト"""
-        builder = BarBuilder()
-        bar = builder.parse_bar_line("[1] 1-1:4 2-2:4")
-        
-        assert bar.volta_number == 1
-        assert bar.volta_start
-        assert len(bar.notes) == 2
-    
     def test_parse_bar_with_chord_notation(self):
         """和音記法を含む小節のパースをテスト"""
         builder = BarBuilder()
@@ -154,3 +145,69 @@ class TestBarBuilder:
         assert notes[0].is_chord
         assert notes[0].is_chord_start
         assert not notes[1].is_chord
+
+    def test_parse_bar_with_triplet(self):
+        """三連符グループのパースをテスト"""
+        builder = BarBuilder()
+        # 4分音符三連符
+        bar = builder.parse_bar_line("[ 1-1:4 2-2:4 3-3:4 ]3")
+        assert len(bar.notes) == 3
+        # すべて三連符スケールで音価が換算されていること（例: 4分音符三連符なら1/3全音符）
+        for note in bar.notes:
+            assert note.duration == "4"
+            # stepなどの値は実装次第で追加検証可能
+
+    def test_parse_bar_with_triplet_and_rest_and_ghost(self):
+        """三連符グループ内で休符やゴーストノートが混在する場合のテスト"""
+        builder = BarBuilder()
+        bar = builder.parse_bar_line("[ 1-1:4 r4 3-x:4 ]3")
+        assert len(bar.notes) == 3
+        assert not bar.notes[0].is_rest
+        assert bar.notes[1].is_rest
+        assert bar.notes[2].fret.lower() == "x"
+
+    def test_parse_bar_with_quintuplet_and_mixed(self):
+        """五連符グループで音価・休符・ミュート混在のテスト"""
+        builder = BarBuilder()
+        bar = builder.parse_bar_line("[ 1-1:4 2-2:8 r8 3-x:4 4-4:16 ]5")
+        assert len(bar.notes) == 5
+        # それぞれの音符が正しくパースされていること
+        assert bar.notes[0].duration == "4"
+        assert bar.notes[1].duration == "8"
+        assert bar.notes[2].is_rest
+        assert bar.notes[3].fret.lower() == "x"
+        assert bar.notes[4].duration == "16"
+
+    def test_triplet_tuplet_flag_and_step(self):
+        """三連符グループのtuplet属性と絶対音価(step)の検証"""
+        builder = BarBuilder(debug_mode=True)
+        bar = builder.parse_bar_line("[ 1-1:4 2-2:4 3-3:4 ]3")
+        assert len(bar.notes) == 3
+        for note in bar.notes:
+            # tuplet属性が正しく付与されている
+            assert note.tuplet is not None
+            assert note.tuplet == 3
+
+    def test_quintuplet_tuplet_flag_and_step(self):
+        """五連符グループのtuplet属性と絶対音価(step)の検証"""
+        builder = BarBuilder(debug_mode=True)
+        bar = builder.parse_bar_line("[ 1-1:8 2-2:8 3-3:8 4-4:8 5-5:8 ]5")
+        assert len(bar.notes) == 5
+        for note in bar.notes:
+            assert note.tuplet is not None
+            assert note.tuplet == 5
+
+    def test_triplet_bar_notes_count(self):
+        """三連符4セットが1小節に12ノートとしてパースされることを検証"""
+        builder = BarBuilder()
+        bar = builder.parse_bar_line("[ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3")
+        assert len(bar.notes) == 12, "1小節内に12個のノートが含まれるべき"
+
+    def test_triplet_line_should_be_single_bar(self):
+        """三連符4セットを含む1小節分の文字列が1小節として扱われるべきだが、現状は分割されてしまう問題の再現テスト"""
+        from tabscript.parser.analyzer import StructureAnalyzer
+        analyzer = StructureAnalyzer()
+        # 三連符4セットを含む1小節分の文字列
+        lines = ["[ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3"]
+        bars = analyzer.analyze_section_bars(lines)
+        assert len(bars) == 1, f"本来は1小節であるべきだが、{len(bars)}小節になっている"

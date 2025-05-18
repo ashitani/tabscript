@@ -156,6 +156,7 @@ class ScoreBuilder:
         # スコアの初期化
         score = Score()
         current_section = None
+        current_column = None
         
         # 行ごとに処理
         for line_num, line in enumerate(lines, 1):
@@ -176,6 +177,12 @@ class ScoreBuilder:
                     self.bar_builder.set_tuning(value)
                 elif key == "beat":
                     score.beat = value
+                elif key == "section":
+                    # 新しいセクションを作成
+                    section = Section(name=value)
+                    score.sections.append(section)
+                    current_section = section
+                    current_column = None  # カラムをリセット
                 # その他のメタデータは無視
                 continue
             
@@ -184,21 +191,26 @@ class ScoreBuilder:
                 section = self.parse_section_header(line)
                 score.sections.append(section)
                 current_section = section
+                current_column = None  # カラムをリセット
                 continue
             
             # セクションがない場合は自動的にデフォルトセクションを作成
             if not current_section:
                 current_section = Section(name="")
                 score.sections.append(current_section)
+                current_column = None  # カラムをリセット
             
             # 小節行の処理
             self.bar_builder.current_line = self.current_line
             bar = self.bar_builder.parse_bar_line(line)
             
-            # 小節をセクションに追加
-            if not current_section.columns:
-                current_section.columns.append(Column(bars=[]))
-            current_section.columns[-1].bars.append(bar)
+            # カラムの初期化または更新
+            if not current_column or len(current_column.bars) >= score.bars_per_line:
+                current_column = Column(bars=[], bars_per_line=score.bars_per_line, beat=score.beat)
+                current_section.columns.append(current_column)
+            
+            # 小節をカラムに追加
+            current_column.bars.append(bar)
         
         return score
     

@@ -1,0 +1,7 @@
+$title="sample"
+$tuning="guitar"
+$beat="4/4"
+$bars_per_line="4"
+
+$section="A"
+[ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3

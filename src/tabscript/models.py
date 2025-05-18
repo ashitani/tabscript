@@ -18,13 +18,18 @@ class Note:
     is_chord: bool = False  # コードの一部かどうか
     is_chord_start: bool = False  # コードの最初の音符かどうか
     chord_notes: List['Note'] = field(default_factory=list)  # コード内の他の音符への参照
+    is_triplet: bool = False  # 三連符グループかどうか
+    triplet_notes: List['Note'] = field(default_factory=list)  # 三連符グループ内の音符リスト
+    tuplet: Optional[int] = None  # 連符の種類（3=三連符, 5=五連符など）
 
     def __post_init__(self):
         if self.chord_notes is None:
             self.chord_notes = []
+        if self.triplet_notes is None:
+            self.triplet_notes = []
         # フレット番号の正規化
         if isinstance(self.fret, str) and self.fret.upper() == 'X':
-            self.fret = 'X'
+            self.fret = 'x'  # 小文字で統一
             self.is_muted = True
 
 @dataclass

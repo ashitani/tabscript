@@ -3,7 +3,7 @@ $tuning="guitar"
 $beat="4/4"
 $bars_per_line="4"
 
-[Repeat]
+$section="Repeat"
 
 {
 @C 5-3:8 4-2 3-0 2-1

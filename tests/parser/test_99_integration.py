@@ -15,11 +15,11 @@ def test_parse_simple_file():
     $tuning = "guitar"
     $beat = "4/4"
     
-    [イントロ]
+    $section="イントロ"
     1-0:4 1-2:4 2-0:4 2-2:4
     3-0:4 3-2:4 4-0:4 4-2:4
     
-    [Aメロ]
+    $section="Aメロ"
     1-0:8 1-2:8 1-3:8 1-5:8 2-0:8 2-2:8 2-3:8 2-5:8
     """
     
@@ -59,7 +59,7 @@ def test_parse_with_repeat_marks():
     $title="Test Score"
     $tuning="guitar"
     
-    [Section A]
+    $section="Section A"
     { 
     1-0:4 1-2:4 2-0:4 2-2:4 
     }
@@ -100,7 +100,7 @@ def test_repeat_symbols_not_as_notes():
     $tuning="guitar"
     $beat="4/4"
 
-    [Test]
+    $section="Test"
     {
     1-1:4 2-2:4
     }
@@ -147,7 +147,7 @@ def test_volta_bracket_not_as_notes():
     $tuning="guitar"
     $beat="4/4"
 
-    [Test]
+    $section="Test"
     {
     1-1:4 2-2:4
     
@@ -211,7 +211,7 @@ def test_parse_with_string_movement():
     $title = "弦移動のテスト"
     $tuning = "guitar"
     
-    [テスト]
+    $section="テスト"
     3-0:4 u2:4 d3:4 d1:4
     """
     
@@ -252,7 +252,7 @@ def test_parse_with_chord_notation():
     $title = "コード記法のテスト"
     $tuning = "guitar"
     
-    [テスト]
+    $section="テスト"
     (1-0 2-2 3-2 4-2 5-0 6-0):4 (1-3 2-3 3-0 4-0 5-2 6-3):4
     """
     
@@ -282,7 +282,7 @@ def test_parse_with_connect():
     $title = "接続記号のテスト"
     $tuning = "guitar"
     
-    [テスト]
+    $section="テスト"
     1-0:4& 1-0:4 2-2:4& 3-4:4
     """
     
@@ -307,7 +307,7 @@ def test_parse_with_rest_and_muted():
     $title = "休符とミュートのテスト"
     $tuning = "guitar"
     
-    [テスト]
+    $section="テスト"
     r:4 1-x:4 r:8 2-x:8 3-0:4
     """
     
@@ -363,13 +363,13 @@ def test_complex_score():
     $beat = "4/4"
     $bars_per_line = "2"
 
-    [イントロ]
+    $section="イントロ"
     {
     1-0:8 1-2:8 1-3:8 1-5:8 2-0:8 2-2:8 2-3:8 2-5:8
     3-0:8 3-2:8 3-3:8 3-5:8 4-0:8 4-2:8 4-3:8 4-5:8
     }
 
-    [Aメロ]
+    $section="Aメロ"
     {
     {
     {1
@@ -383,7 +383,7 @@ def test_complex_score():
     }
     }
 
-    [Bメロ]
+    $section="Bメロ"
     (1-0 2-2 3-2 4-2 5-0 6-0):4 (1-3 2-3 3-0 4-0 5-2 6-3):4
     (1-2 2-0 3-0 4-0 5-2 6-3):4 (1-0 2-2 3-2 4-2 5-0 6-0):4
     """

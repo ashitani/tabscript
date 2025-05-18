@@ -27,31 +27,25 @@ class TextPreprocessor:
         if self.debug_mode and level <= self.debug_level:
             print(*args, **kwargs)
     
-    def preprocess(self, text: str) -> str:
-        """テキストの前処理を行う
+    def process(self, text: str) -> str:
+        """テキストを前処理する
         
         Args:
-            text: 処理対象のテキスト
+            text: 前処理するテキスト
             
         Returns:
-            前処理後のテキスト
+            str: 前処理済みのテキスト
         """
-        self.debug_print("\n=== preprocess ===", level=1)
-        
-        # 1. コメント除去
+        # コメントを除去
         text = self._clean_text(text)
-        self.debug_print(f"After comment removal: {len(text)} bytes", level=2)
-        
-        # 2. 空行の正規化
-        text = self._normalize_empty_lines(text)
-        self.debug_print(f"After normalizing empty lines: {len(text)} bytes", level=2)
-        
-        # ネストされた括弧の処理順序を修正
-        # 3. 繰り返し記号と n番カッコを同時に処理
-        text = self._normalize_all_brackets(text)
-        self.debug_print(f"After normalizing all brackets: {len(text)} bytes", level=2)
-        
+        # 繰り返し記号を正規化
+        text = self._normalize_repeat_brackets(text)
+        # n番カッコを正規化
+        text = self._normalize_volta_brackets(text)
         return text
+    
+    def preprocess(self, text: str) -> str:
+        return self.process(text)
     
     def _clean_text(self, text: str) -> str:
         """不要な空行とコメントを除去
@@ -87,6 +81,9 @@ class TextPreprocessor:
         
         # 先頭と末尾の空白を削除
         text = text.strip()
+        
+        # 小節区切り'|'の前後の空白を除去（公式仕様では不要なので削除）
+        # text = re.sub(r'\s*\|\s*', '|', text)
         
         return text
     

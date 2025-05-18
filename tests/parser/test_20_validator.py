@@ -2,6 +2,7 @@ import pytest
 # from src.tabscript.parser.validator import TabScriptValidator
 from tabscript.parser.validator import TabScriptValidator  # srcを削除
 from tabscript.exceptions import ParseError  # srcを削除
+from fractions import Fraction
 
 def test_duration_validation():
     """音価の検証テスト"""
@@ -29,22 +30,22 @@ def test_bar_duration_validation():
     validator.beat = "4/4"
     
     # 正しい長さの小節
-    assert validator.validate_bar_duration("4/4", 4) is True  # 4分音符4つ
-    assert validator.validate_bar_duration("4/4", 2 + 1 + 1) is True  # 2分音符1つと4分音符2つ
+    assert validator.validate_bar_duration("4/4", Fraction(4)) is True  # 4分音符4つ
+    assert validator.validate_bar_duration("4/4", Fraction(2) + Fraction(1) + Fraction(1)) is True  # 2分音符1つと4分音符2つ
     
     # 長さが足りない小節
     with pytest.raises(ParseError, match="Bar duration is too short"):
-        validator.validate_bar_duration("4/4", 3)  # 4分音符3つ
+        validator.validate_bar_duration("4/4", Fraction(3))  # 4分音符3つ
     
     # 長すぎる小節
     with pytest.raises(ParseError, match="Bar duration is too long"):
-        validator.validate_bar_duration("4/4", 5)  # 4分音符5つ
+        validator.validate_bar_duration("4/4", Fraction(5))  # 4分音符5つ
     
     # 3/4拍子の場合
     validator.beat = "3/4"
-    assert validator.validate_bar_duration("3/4", 3) is True  # 4分音符3つ
+    assert validator.validate_bar_duration("3/4", Fraction(3)) is True  # 4分音符3つ
     with pytest.raises(ParseError, match="Bar duration is too long"):
-        validator.validate_bar_duration("3/4", 4)  # 4分音符4つ
+        validator.validate_bar_duration("3/4", Fraction(4))  # 4分音符4つ
 
 def test_chord_notation_duration():
     """和音の音価検証テスト"""

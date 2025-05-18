@@ -1,12 +1,10 @@
 $title="Test song"
 $tuning="guitar"
 $beat="4/4"
-
-[Intro]
+$section="Intro"
 (1-2 2-4 3-4 4-4 5-2 6-2):1
 (1-2 2-4 3-4 4-4 5-x 6-x):1 
-
-[A]
+$section="A"
 5-3:8 4-2 3-0 2-1
 6-3 5-2 4-0 3-0
 1-3 2-5 3-5 4-5

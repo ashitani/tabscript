@@ -85,7 +85,7 @@ class BarBuilder:
         
         # n番カッコの処理
         if isinstance(content, str) and content.startswith('['):
-            volta_match = re.match(r'\[(\d+)\](.*)', content)
+            volta_match = re.match(r'\[(\d+)\]\s+(.*)', content)
             if volta_match:
                 bar.volta_number = int(volta_match.group(1))
                 bar.volta_start = True
@@ -151,43 +151,59 @@ class BarBuilder:
             # 空白をスキップ
             while current_pos < content_length and content[current_pos].isspace():
                 current_pos += 1
-            
             if current_pos >= content_length:
                 break
-            
-            # 和音（括弧で囲まれたもの）を処理
-            if content[current_pos] == '(':
+            # 連符グループの開始を検出
+            if content[current_pos] == '[':
+                group_start = current_pos + 1
+                bracket_depth = 1
+                current_pos += 1
+                # グループの終わりを探す
+                while current_pos < content_length and bracket_depth > 0:
+                    if content[current_pos] == '[':
+                        bracket_depth += 1
+                    elif content[current_pos] == ']':
+                        bracket_depth -= 1
+                    current_pos += 1
+                group_end = current_pos - 1
+                # グループ直後の数字を取得
+                tuplet_num_str = ''
+                while current_pos < content_length and content[current_pos].isspace():
+                    current_pos += 1
+                while current_pos < content_length and content[current_pos].isdigit():
+                    tuplet_num_str += content[current_pos]
+                    current_pos += 1
+                if not tuplet_num_str:
+                    raise ParseError("連符グループの閉じ括弧の直後に連符数がありません", self.current_line)
+                tuplet_type = int(tuplet_num_str)
+                tuplet_content = content[group_start:group_end].strip()
+                tokens.append(f"[tuplet:{tuplet_type}]{tuplet_content}")
+                continue
+            # 和音（括弧で囲まれたもの）を1トークンとして抽出
+            if content[current_pos] == '(':  # 和音の開始
                 bracket_depth = 1
                 start_pos = current_pos
                 current_pos += 1
-                
-                # 括弧が閉じられるまで読み進める
                 while current_pos < content_length and bracket_depth > 0:
-                    if content[current_pos] == '(':
-                        bracket_depth += 1
-                    elif content[current_pos] == ')':
-                        bracket_depth -= 1
+                    if content[current_pos] == '(': bracket_depth += 1
+                    elif content[current_pos] == ')': bracket_depth -= 1
                     current_pos += 1
-                
                 # 和音の後に音価指定がある場合（例: (1-1 2-2):4）
                 if current_pos < content_length and content[current_pos] == ':':
+                    current_pos += 1
                     while current_pos < content_length and not content[current_pos].isspace():
                         current_pos += 1
-                
-                # 和音全体をトークンとして追加
                 tokens.append(content[start_pos:current_pos])
-            else:
-                # 通常のトークン（和音以外）
-                start_pos = current_pos
-                
-                # スペースまたは括弧が出現するまで読み進める
-                while current_pos < content_length and not content[current_pos].isspace() and content[current_pos] != '(':
-                    current_pos += 1
-                
-                tokens.append(content[start_pos:current_pos])
+                continue
+            # 通常のトークン処理
+            token_start = current_pos
+            while current_pos < content_length and not content[current_pos].isspace() and content[current_pos] not in ['(', '[']:
+                current_pos += 1
+            token = content[token_start:current_pos]
+            if token:
+                tokens.append(token)
         
-        self.debug_print(f"Tokenized content: {tokens}")
-        
+        self.debug_print(f"[DEBUG] tokens after split: {tokens}")
         # コード名と音価の初期設定
         current_chord = None
         current_duration = "4"  # デフォルトは4分音符
@@ -200,6 +216,23 @@ class BarBuilder:
                 continue
             
             try:
+                # 連符グループの処理
+                if token.startswith('[tuplet:'):
+                    m = re.match(r'\[tuplet:(\d+)\](.*)', token)
+                    if not m:
+                        raise ParseError("連符グループのパースに失敗しました", self.current_line)
+                    tuplet_type = int(m.group(1))
+                    tuplet_content = m.group(2)
+                    tuplet_notes = []
+                    for note_token in tuplet_content.split():
+                        note = self.note_builder.parse_note(note_token, current_duration, current_chord)
+                        note.tuplet = tuplet_type
+                        tuplet_notes.append(note)
+                    if len(tuplet_notes) != tuplet_type:
+                        raise ParseError(f"{tuplet_type}連符は必ず{tuplet_type}つの音符で構成される必要があります", self.current_line)
+                    notes.extend(tuplet_notes)
+                    continue
+                
                 # 和音表記の場合
                 if token.startswith('(') and ')' in token:
                     chord_note = self.note_builder.parse_chord_notation(token, current_duration, current_chord)
@@ -227,7 +260,7 @@ class BarBuilder:
         # 音符ごとにステップ数を計算
         for note in notes:
             self.note_builder.calculate_note_step(note)
-        
+        self.debug_print(f"[DEBUG] notes before return: {[getattr(n, 'tuplet', None) for n in notes]}")
         return notes
     
     def _calculate_note_step(self, note: Note) -> None:

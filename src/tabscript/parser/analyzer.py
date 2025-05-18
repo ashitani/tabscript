@@ -70,12 +70,12 @@ class StructureAnalyzer:
                 # メタデータ行
                 key, value = self._parse_metadata_line(line)
                 metadata[key] = value
-            elif line.startswith('['):
-                # セクション開始
-                if current_section is not None:
-                    sections.append(SectionInfo(name=current_section, content=current_content))
-                current_section = line[1:-1].strip()
-                current_content = []
+                # セクション名の切り替え
+                if key == 'section':
+                    if current_section is not None:
+                        sections.append(SectionInfo(name=current_section, content=current_content))
+                    current_section = value
+                    current_content = []
             else:
                 # セクションの内容
                 if current_section is not None:
@@ -158,7 +158,7 @@ class StructureAnalyzer:
         # メタデータとセクション構造を初期化
         metadata = {}
         sections = []
-        current_section = {"name": "", "bars": []}  # デフォルトセクションを初期化
+        current_section = None
         current_content = []
         
         # 行ごとに処理
@@ -167,42 +167,35 @@ class StructureAnalyzer:
             if not line:
                 continue
                 
-            # メタデータ行の処理（$で始まる行のみ）
+            # メタデータ行の処理（$で始まる行）
             if line.startswith('$'):
                 key, value = self._parse_metadata_line(line)
                 metadata[key] = value
-                continue
-                
-            # セクションヘッダーの処理（[Section Name]形式）
-            if line.startswith('[') and line.endswith(']'):
-                # 前のセクションを保存
-                if current_content:
-                    current_section["bars"] = self.analyze_section_bars(current_content)
-                    sections.append(current_section)
-                    current_content = []
-                # 新しいセクションを開始
-                current_section = {"name": line[1:-1].strip(), "bars": []}
-                continue
-                
-            # セクションヘッダーの処理（#Section Name形式）
-            if line.startswith('#'):
-                # 前のセクションを保存
-                if current_content:
-                    current_section["bars"] = self.analyze_section_bars(current_content)
-                    sections.append(current_section)
-                    current_content = []
-                # 新しいセクションを開始
-                current_section = {"name": line[1:].strip(), "bars": []}
+                # セクション名の切り替え
+                if key == 'section':
+                    # 前のセクションを保存
+                    if current_section is not None and current_content:
+                        current_section["bars"] = self.analyze_section_bars(current_content)
+                        sections.append(current_section)
+                        current_content = []
+                    # 新しいセクションを開始
+                    current_section = {"name": value, "bars": []}
                 continue
                 
             # 通常の行（小節）の処理
+            if current_section is None:
+                # $section=が現れる前の小節はデフォルトセクションとして扱う
+                current_section = {"name": "", "bars": []}
+            
+            # 分割せず、そのままcurrent_contentに追加
             current_content.append(line)
         
         # 最後のセクションを保存
-        if current_content:
-            current_section["bars"] = self.analyze_section_bars(current_content)
+        if current_section is not None and current_content:
+            filtered_content = [l for l in current_content if not (l.startswith('[') and l.endswith(']')) and not l.startswith('#')]
+            current_section["bars"] = self.analyze_section_bars(filtered_content)
             sections.append(current_section)
-            
+        
         return metadata, sections
 
     def analyze_section_bars(self, lines: List[str]) -> List[BarInfo]:

@@ -127,11 +127,10 @@ def test_unclosed_volta_bracket():
     preprocessor = TextPreprocessor()
     
     # 閉じられていないn番カッコ
-    text = """
-    [Section]
+    text = '''
     {1
-    3-3:4 4-4:4
-    """
+    1-1:4 2-2:4
+    '''
     
     with pytest.raises(ValueError, match="Unclosed volta bracket"):
         preprocessor._normalize_volta_brackets(text)
@@ -139,11 +138,11 @@ def test_unclosed_volta_bracket():
 def test_mismatched_volta_numbers():
     """n番カッコの番号が一致しない場合のテスト"""
     preprocessor = TextPreprocessor()
-    text = """
+    text = '''
     {1
     1-1:4 2-2:4
     2}
-    """
+    '''
     with pytest.raises(ValueError, match="Mismatched volta bracket number"):
         preprocessor.preprocess(text)
 
@@ -285,4 +284,23 @@ def test_nested_brackets():
     expected = "{ {1 1-1:4 }1\n{2 2-2:4 }2 }"
     result = preprocessor.preprocess(input_text)
     assert result == expected
+
+def test_preprocessor_basic():
+    preprocessor = TextPreprocessor()
+    input_text = "a b c d"
+    result = preprocessor.process(input_text)
+    assert result == "a b c d"
+
+def test_preprocessor_whitespace():
+    preprocessor = TextPreprocessor()
+    input_text = " a   b   c  d "
+    result = preprocessor.process(input_text)
+    # 公式仕様では余分な空白はそのまま残る（正規化しない）場合、期待値も同じ
+    assert result == "a   b   c  d"
+
+def test_preprocessor_comments():
+    preprocessor = TextPreprocessor()
+    input_text = "# Comment\na b c d"
+    result = preprocessor.process(input_text)
+    assert result == "a b c d"
     

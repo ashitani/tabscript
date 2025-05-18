@@ -165,8 +165,8 @@ class NoteBuilder:
         
         # ミュート音符の処理（X または x）
         if fret_str.upper() == 'X':
-            # ミュート音符も音価を省略可能
             is_muted = True
+            fret_str = 'x'  # 小文字で統一
         else:
             is_muted = False
         
@@ -265,10 +265,26 @@ class NoteBuilder:
         if duration.endswith('.'):
             base = int(duration[:-1])
             # 付点音符は基本の音価の1.5倍
-            note.step = Fraction(4, base) * Fraction(3, 2)
+            step = Fraction(4, base) * Fraction(3, 2)
         else:
             base = int(duration)
-            note.step = Fraction(4, base)
+            step = Fraction(4, base)
+        
+        # 連符スケールの適用
+        if note.tuplet is not None:
+            n = note.tuplet
+            # 三連符: 2/3, 五連符: 4/5, 七連符: 6/7 ...
+            step = step * Fraction(n - 1, n)
+            if n == 3:
+                step = step * Fraction(2, 3)
+            elif n == 5:
+                step = step * Fraction(4, 5)
+            elif n == 7:
+                step = step * Fraction(6, 7)
+            # それ以外は一般化
+            else:
+                step = step * Fraction(n - 1, n)
+        note.step = step
     
     def get_string_count(self) -> int:
         """チューニング設定から弦の数を取得
@@ -329,3 +345,25 @@ class NoteBuilder:
                 raise e
         
         return bar 
+
+    def build_note(self, string, fret, duration):
+        """通常の音符を構築する"""
+        return Note(string=string, fret=fret, duration=duration, is_rest=False, is_muted=False, is_chord=False, is_chord_start=False, is_triplet=False, triplet_notes=[], connect_next=False, is_up_move=False, is_down_move=False)
+
+    def build_rest(self, duration):
+        """休符を構築する"""
+        return Note(string=None, fret="r", duration=duration, is_rest=True, is_muted=False, is_chord=False, is_chord_start=False, is_triplet=False, triplet_notes=[], connect_next=False, is_up_move=False, is_down_move=False)
+
+    def build_muted(self, string, duration):
+        """ミュート音符を構築する"""
+        return Note(string=string, fret="x", duration=duration, is_rest=False, is_muted=True, is_chord=False, is_chord_start=False, is_triplet=False, triplet_notes=[], connect_next=False, is_up_move=False, is_down_move=False)
+
+    def build_tuplet(self, notes, duration, tuplet_type):
+        """任意連符グループを構築する（durationは各音符の値を維持）"""
+        if len(notes) != tuplet_type:
+            raise ParseError(f"Invalid tuplet: must contain exactly {tuplet_type} notes")
+        for note in notes:
+            note.tuplet = tuplet_type
+        return notes
+
+    build_triplet = build_tuplet 
