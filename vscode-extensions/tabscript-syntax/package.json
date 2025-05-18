@@ -1,7 +1,7 @@
 {
     "name": "tabscript-syntax",
     "displayName": "TabScript Syntax",
-    "description": "Syntax highlighting for TabScript files",
+    "description": "TabScriptのシンタックスハイライト",
     "version": "0.0.1",
     "publisher": "ashiya",
     "repository": {
@@ -32,12 +32,12 @@
         }],
         "themes": [
             {
-                "label": "TabScript Light Theme",
+                "label": "TabScript Light",
                 "uiTheme": "vs",
                 "path": "./themes/tabscript-light-theme.json"
             },
             {
-                "label": "TabScript Dark Theme",
+                "label": "TabScript Dark",
                 "uiTheme": "vs-dark",
                 "path": "./themes/tabscript-dark-theme.json"
             }
