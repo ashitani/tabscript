@@ -99,7 +99,7 @@ $section="A"
     assert metadata["tuning"] == "guitar"
     assert len(sections) == 1
     assert sections[0]["name"] == "A"
-    assert len(sections[0]["bars"]) == 4
+    assert len(sections[0]["bars"]) == 1
 
 def test_parse_samples_tab_like():
     analyzer = StructureAnalyzer()

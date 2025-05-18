@@ -1,7 +1,16 @@
 $title="sample"
 $tuning="guitar"
 $beat="4/4"
-$bars_per_line="4"
+$bars_per_line="2"
 
-$section="A"
+$section="With Code"
+@F#m [ 1-2 2-2 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3
+
+$section="Without Code"
 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3 [ 4-2 4-4 3-2 ]3
+
+$section="Without Code, Without Triplet"
+4-2 4-4 3-2 4-2
+
+$section="With Code, Without Triplet"
+@F#m 4-2 4-4 3-2 4-2

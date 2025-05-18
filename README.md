@@ -80,7 +80,8 @@ parser.render_score("output.txt")
 - ✅繰り返し
 - DS、Coda
 - ✅行末コメント対応
-- 三連符
+- ✅三連符
+- 音価の表記
 - 各種奏法（ハンマリング、プリング、スライド、チョーキング）
 - 改ページ
 - VSCode plugin

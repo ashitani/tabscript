@@ -430,6 +430,16 @@ class Renderer:
             repeat_margin = 2.0 * mm if bar.is_repeat_start or bar.is_repeat_end else 0
             usable_width = bar_width - (2 * bar_margin) - repeat_margin
             step_width = usable_width / total_steps
+
+            # コードと三連符が重なる場合のYオフセット判定
+            has_chord = any(note.chord for note in bar.notes)
+            has_triplet = any(getattr(note, 'tuplet', None) == 3 for note in bar.notes)
+            y_offset = 0
+            if has_chord and has_triplet:
+                y_offset = 10  # 10pt ≒ 3.5mm だが、pt単位で10をそのまま使う（必要ならmm換算も可）
+
+            # 各弦の位置を計算（必要なら下げる）
+            y_positions = [y - (i * self.style_manager.get("string_spacing")) - y_offset for i in range(string_count)]
             
             # 縦線と横線を描画
             # 繰り返し開始記号の描画
@@ -495,31 +505,79 @@ class Renderer:
             
             # 音符を配置（開始マージンから開始）
             last_chord = None  # 前回描画したコード名を記録
+            triplet_ranges = []  # 三連符グループの開始・終了X座標リスト
+            note_x_positions = []  # 各ノートのX座標
+            note_x = current_x + bar_margin
             for note in bar.notes:
-                # パース時に計算済みのステップ数を使用
+                note_x_positions.append(note_x)
                 note_width = note.step * step_width
+                note_x += note_width
+
+            # 三連符グループの範囲を検出
+            i = 0
+            while i < len(bar.notes):
+                if getattr(bar.notes[i], 'tuplet', None) == 3:
+                    start = i
+                    # 3つの音符を1グループとして扱う
+                    end = min(start + 2, len(bar.notes) - 1)  # 3つの音符を1グループに
+                    # 開始と終了のX座標を計算（音符の数値テキストの中心位置を使用）
+                    x1 = note_x_positions[start] + 1.5 * mm  # _draw_fret_numberのオフセットと同じ
+                    x2 = note_x_positions[end] + 1.5 * mm + self.canvas.stringWidth(str(bar.notes[end].fret), "Helvetica", 10)
+                    triplet_ranges.append((x1, x2, start, end))  # 開始・終了のX座標と音符のインデックスを保存
+                    i = end + 1  # 次のグループの開始位置へ
+                else:
+                    i += 1
+
+            # 三連符記号を描画
+            for x1, x2, start, end in triplet_ranges:
+                string_spacing = self.style_manager.get("string_spacing")
+                y_triplet = y_positions[0] + self.style_manager.get("triplet_offset", 6 * mm) - string_spacing * 0.25
+
+                # 3のテキストだけもう少し上に
+                text_y_offset = - string_spacing * 0.1
+
+                # 三連符の括弧の高さを設定
+                bracket_height = self.style_manager.get("triplet_bracket_height", 2.5 * mm)
                 
-                # コードを描画（前回と同じコードは描画しない）
+                # 上線
+                self.canvas.line(x1, y_triplet, x2, y_triplet)
+                
+                # 左縦線（最初の音符の真上）
+                self.canvas.line(x1, y_triplet, x1, y_triplet - bracket_height)
+                
+                # 右縦線（最後の音符の真上）
+                self.canvas.line(x2, y_triplet, x2, y_triplet - bracket_height)
+                
+                # 3の数字（背景に白い四角を描画）
+                self.canvas.setFont("Helvetica-Bold", 10)
+                text = "3"
+                text_width = self.canvas.stringWidth(text, "Helvetica-Bold", 10)
+                text_height = 10
+                mid_x = (x1 + x2) / 2
+                
+                # テキストの背景に白い四角を描画（位置を下げる）
+                self.canvas.setFillColor('white')
+                self.canvas.rect(mid_x - text_width/2 - 1, y_triplet - text_height/2 - 1 - text_y_offset, 
+                               text_width + 2, text_height + 2, fill=1, stroke=0)
+                
+                # テキストを描画（位置を下げる）
+                self.canvas.setFillColor('black')
+                self.canvas.drawString(mid_x - text_width/2, y_triplet - text_height/2 - 1 - text_y_offset, text)
+
+            # 音符を描画（計算済みの位置を使用）
+            for i, note in enumerate(bar.notes):
+                note_x = note_x_positions[i]
+                note_width = note.step * step_width
                 if note.chord and note.chord != last_chord:
-                    self._draw_chord(note_x, y_positions[0], note.chord)
+                    # コードはy_offsetを加えず、さらに弦間の5%分だけ上に描画
+                    string_spacing = self.style_manager.get("string_spacing")
+                    self._draw_chord(note_x, y_positions[0] + y_offset + string_spacing * 0.05, note.chord)
                     last_chord = note.chord
-                
-                # デバッグ出力を追加
-                self.debug_print(f"Processing note: {note}")
-                self.debug_print(f"  is_chord: {note.is_chord}")
-                self.debug_print(f"  is_chord_start: {getattr(note, 'is_chord_start', False)}")
-                if note.is_chord and getattr(note, 'is_chord_start', False):
-                    self.debug_print(f"  chord_notes: {len(note.chord_notes)}")
-                
-                # 音符を描画
                 if not note.is_rest:
                     if note.is_chord and getattr(note, 'is_chord_start', False):
-                        # 和音を一括描画
                         self._draw_chord_notes(note_x, y_positions, note)
                     elif not note.is_chord:
-                        # 和音でない通常の音符を描画
                         self._draw_fret_number(note_x, y_positions[note.string - 1], note.fret, note.connect_next)
-                
                 note_x += note_width
             
             # 繰り返し終了記号の描画
