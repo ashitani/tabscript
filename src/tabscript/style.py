@@ -27,8 +27,8 @@ class StyleManager:
             "repeat_dot_offset": 3 * mm,     # リピート記号のドットのオフセット
             
             # 行の高さ
-            "normal_row_height": 22 * mm,    # 通常の行の高さ
-            "volta_row_height": 35 * mm,     # ボルタブラケットを含む行の高さ
+            "normal_row_height": 15 * mm,     # 通常の行の高さ（6弦×3mm + 余白）
+            "volta_row_height": 20 * mm,      # ボルタブラケットを含む行の高さ
             
             # 線の太さ
             "normal_line_width": 1.0,        # 通常の線の太さ

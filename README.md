@@ -84,7 +84,7 @@ parser.render_score("output.txt")
 - 音価の表記
 - 各種奏法（ハンマリング、プリング、スライド、チョーキング）
 - 改ページ
-- VSCode plugin
+- ✅VSCode extention(とりあえずpdfプレビューのみ)
 - HTML5+JS
 - pypi
 

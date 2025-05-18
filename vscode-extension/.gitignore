@@ -1,0 +1,22 @@
+# node_modules: 依存パッケージ
+node_modules/
+
+# TypeScriptのビルド成果物
+out/
+*.js
+*.js.map
+
+# VSCode拡張のパッケージ
+*.vsix
+
+# ログや一時ファイル
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OSごとの不要ファイル
+.DS_Store
+Thumbs.db
+
+# テスト用一時ディレクトリ
+.vscode-test/ 

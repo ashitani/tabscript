@@ -86,13 +86,7 @@ class Renderer:
                 has_volta = any(bar.volta_number is not None for bar in column.bars)
                 
                 # 小節グループを描画（接続情報を渡す）
-                self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
-                
-                # n番カッコを含む場合は縦間隔を広げる
-                if has_volta:
-                    y -= self.style_manager.get("volta_row_height")  # ボルタブラケットを含む行の高さ
-                else:
-                    y -= self.style_manager.get("normal_row_height")  # 通常の行の高さ
+                y = self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
                 
                 # 新しいページが必要かチェック
                 if y < self.margin_bottom:
@@ -414,8 +408,9 @@ class Renderer:
             group_width = self.usable_width / bars_per_line * len(bars)
             bar_width = group_width / len(bars)
         
-        # 各弦の位置を計算
-        y_positions = [y - (i * self.style_manager.get("string_spacing")) for i in range(string_count)]
+        # 各弦の位置を計算（最初の弦の位置を基準に固定）
+        base_y = y
+        y_positions = [base_y - (i * self.style_manager.get("string_spacing")) for i in range(string_count)]
         
         # 小節を順に描画
         current_x = self.margin
@@ -439,7 +434,7 @@ class Renderer:
                 y_offset = 10  # 10pt ≒ 3.5mm だが、pt単位で10をそのまま使う（必要ならmm換算も可）
 
             # 各弦の位置を計算（必要なら下げる）
-            y_positions = [y - (i * self.style_manager.get("string_spacing")) - y_offset for i in range(string_count)]
+            y_positions = [base_y - (i * self.style_manager.get("string_spacing")) - y_offset for i in range(string_count)]
             
             # 縦線と横線を描画
             # 繰り返し開始記号の描画
@@ -603,7 +598,7 @@ class Renderer:
         
         # 最後の縦線を描画
         self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
-
+        
         # 行頭の音符の右半分スラー
         if has_previous_connection and len(bars) > 0 and len(bars[0].notes) > 0:
             first_note = bars[0].notes[0]
@@ -646,7 +641,10 @@ class Renderer:
                 note_x += note.step * step_width
         
         # 最後の縦線を描画
-        self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1]) 
+        self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
+        
+        # y座標を更新（最後の弦の位置を基準に）
+        return y_positions[-1] - self.style_manager.get("string_spacing")
 
     def _draw_slur(self, note_x, note, next_note, x2, y_positions):
         """通常のスラーを描画"""
