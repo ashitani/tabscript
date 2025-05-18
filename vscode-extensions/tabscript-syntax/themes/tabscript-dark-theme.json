@@ -1,0 +1,36 @@
+{
+    "name": "TabScript Dark Theme",
+    "colors": {
+        "editor.background": "#1E1E1E",
+        "editor.foreground": "#D4D4D4"
+    },
+    "tokenColors": [
+        {
+            "name": "Comments",
+            "scope": [
+                "comment.line.number-sign.tabscript",
+                "comment.line.double-slash.tabscript"
+            ],
+            "settings": {
+                "foreground": "#6A9955",
+                "fontStyle": "italic"
+            }
+        },
+        {
+            "name": "Metadata",
+            "scope": "meta.metadata.tabscript",
+            "settings": {
+                "foreground": "#C586C0",
+                "fontStyle": "bold"
+            }
+        },
+        {
+            "name": "Section",
+            "scope": "meta.section.tabscript",
+            "settings": {
+                "foreground": "#4EC9B0",
+                "fontStyle": "bold"
+            }
+        }
+    ]
+} 

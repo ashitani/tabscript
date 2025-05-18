@@ -1,0 +1,26 @@
+{
+    "name": "TabScript",
+    "scopeName": "source.tabscript",
+    "patterns": [
+        {
+            "name": "comment.line.number-sign.tabscript",
+            "match": "^#.*$",
+            "comment": "Line comments starting with #"
+        },
+        {
+            "name": "comment.line.double-slash.tabscript",
+            "match": "//.*$",
+            "comment": "Line comments ending with //"
+        },
+        {
+            "name": "meta.section.tabscript",
+            "match": "^\\$section\\s*=\\s*.*$",
+            "comment": "Section lines"
+        },
+        {
+            "name": "meta.metadata.tabscript",
+            "match": "^\\$(?!section\\s*=)[^=]+\\s*=\\s*.*$",
+            "comment": "Metadata lines starting with $ (excluding section)"
+        }
+    ]
+} 

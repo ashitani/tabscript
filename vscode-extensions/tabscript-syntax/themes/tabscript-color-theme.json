@@ -1,0 +1,33 @@
+{
+    "name": "TabScript Color Theme",
+    "colors": {
+        "editor.background": "#FFFFFF",
+        "editor.foreground": "#000000"
+    },
+    "tokenColors": [
+        {
+            "name": "Comments",
+            "scope": "comment.line.number-sign.tabscript",
+            "settings": {
+                "foreground": "#008000",
+                "fontStyle": "italic"
+            }
+        },
+        {
+            "name": "Section Headers",
+            "scope": "meta.section.tabscript",
+            "settings": {
+                "foreground": "#0000FF",
+                "fontStyle": "bold"
+            }
+        },
+        {
+            "name": "Metadata",
+            "scope": "meta.metadata.tabscript",
+            "settings": {
+                "foreground": "#800080",
+                "fontStyle": "bold"
+            }
+        }
+    ]
+} 

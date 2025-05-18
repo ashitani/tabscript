@@ -4,7 +4,7 @@ $tuning="guitar"
 $beat="4/4"
 $bars_per_line="4" 
 
-$section="4 notes"
+$section = "4 notes"
 6-1 2 3 4
 5-1 2 3 4
 4-1 2 3 4

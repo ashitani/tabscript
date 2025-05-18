@@ -1,0 +1,65 @@
+{
+    "name": "tabscript-syntax",
+    "displayName": "TabScript Syntax",
+    "description": "Syntax highlighting for TabScript files",
+    "version": "0.0.1",
+    "publisher": "ashiya",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ashiya/tabscript"
+    },
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onLanguage:tabscript"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "languages": [{
+            "id": "tabscript",
+            "aliases": ["TabScript", "tabscript"],
+            "extensions": [".tab"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "tabscript",
+            "scopeName": "source.tabscript",
+            "path": "./syntaxes/tabscript.tmLanguage.json"
+        }],
+        "themes": [
+            {
+                "label": "TabScript Light Theme",
+                "uiTheme": "vs",
+                "path": "./themes/tabscript-light-theme.json"
+            },
+            {
+                "label": "TabScript Dark Theme",
+                "uiTheme": "vs-dark",
+                "path": "./themes/tabscript-dark-theme.json"
+            }
+        ]
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "node ./out/test/runTest.js",
+        "package": "vsce package"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs",
+    "devDependencies": {
+        "@types/vscode": "^1.60.0",
+        "@types/node": "^16.11.7",
+        "typescript": "^4.5.5",
+        "@vscode/vsce": "^2.15.0"
+    }
+}

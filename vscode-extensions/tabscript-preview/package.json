@@ -3,7 +3,11 @@
   "displayName": "TabScript PDF Preview",
   "description": "TabScriptの.tabファイルをPDFプレビュー",
   "version": "0.0.1",
-  "publisher": "your-name",
+  "publisher": "ashiya",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashiya/tabscript"
+  },
   "engines": {
     "vscode": "^1.60.0"
   },
