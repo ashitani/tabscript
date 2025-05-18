@@ -154,24 +154,17 @@ class ScoreBuilder:
             Score: パースされたスコアオブジェクト
         """
         self.debug_print(f"Parsing {len(lines)} lines")
-        
-        # スコアオブジェクトを作成
         score = Score()
-        
-        # 現在のセクションとカラム
         current_section = None
         current_column = None
         current_bars = []
-        
-        # 行をパース
+        current_bars_per_line = 4  # デフォルト値
+        current_beat = '4/4'
+
         for line in lines:
             self.debug_print(f"Parsing line: {line}")
-            
-            # 空行をスキップ
             if not line.strip():
                 continue
-            
-            # メタデータ行の処理
             if line.startswith('$'):
                 key, value = self.parse_metadata_line(line)
                 if key == 'title':
@@ -180,48 +173,46 @@ class ScoreBuilder:
                     score.tuning = value
                 elif key == 'beat':
                     score.beat = value
+                    current_beat = value
                 elif key == 'bars_per_line':
-                    score.bars_per_line = int(value)
-                elif key == 'section':
-                    # 現在のセクションの小節を処理
+                    # bars_per_line切り替え時は強制的にカラムを区切る
                     if current_section and current_bars:
-                        self._organize_bars_into_columns(current_section, current_bars, score.bars_per_line, score.beat)
+                        # 直前のbars_per_lineでカラム分割
+                        self._organize_bars_into_columns(current_section, current_bars, current_bars_per_line, current_beat)
                         current_bars = []
-                    
-                    # 新しいセクションを作成
+                    current_bars_per_line = int(value)
+                    score.bars_per_line = current_bars_per_line
+                elif key == 'section':
+                    if current_section and current_bars:
+                        self._organize_bars_into_columns(current_section, current_bars, current_bars_per_line, current_beat)
+                        current_bars = []
                     current_section = Section(value)
                     score.sections.append(current_section)
                     current_column = None
                 continue
-            
-            # セクション行の処理
             if line.startswith('[') and line.endswith(']'):
-                # 現在のセクションの小節を処理
                 if current_section and current_bars:
-                    self._organize_bars_into_columns(current_section, current_bars, score.bars_per_line, score.beat)
+                    self._organize_bars_into_columns(current_section, current_bars, current_bars_per_line, current_beat)
                     current_bars = []
-                
                 current_section = self.parse_section_header(line)
                 score.sections.append(current_section)
                 current_column = None
                 continue
-            
-            # セクションが未定義の場合はデフォルトセクションを作成
             if not current_section:
                 current_section = Section("Default")
                 score.sections.append(current_section)
                 current_column = None
-            
-            # 小節行の処理
             if line.strip():
                 bar = self.parse_bar_line(line)
                 if bar:
                     current_bars.append(bar)
-        
-        # 最後のセクションの小節を処理
+                    # bars_per_lineに達したらカラムを作成
+                    if len(current_bars) == current_bars_per_line:
+                        self._organize_bars_into_columns(current_section, current_bars, current_bars_per_line, current_beat)
+                        current_bars = []
+        # 残りの小節をカラムに
         if current_section and current_bars:
-            self._organize_bars_into_columns(current_section, current_bars, score.bars_per_line, score.beat)
-        
+            self._organize_bars_into_columns(current_section, current_bars, current_bars_per_line, current_beat)
         return score
     
     # 後方互換性のためのメソッド

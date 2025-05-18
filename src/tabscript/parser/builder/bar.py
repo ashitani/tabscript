@@ -228,8 +228,18 @@ class BarBuilder:
                         note = self.note_builder.parse_note(note_token, current_duration, current_chord)
                         note.tuplet = tuplet_type
                         tuplet_notes.append(note)
-                    if len(tuplet_notes) != tuplet_type:
-                        raise ParseError(f"{tuplet_type}連符は必ず{tuplet_type}つの音符で構成される必要があります", self.current_line)
+                    # 音価合計で判定
+                    # 連符の基準音価m（最大分母）
+                    if tuplet_notes:
+                        base_duration = max(int(n.duration) for n in tuplet_notes if n.duration.isdigit())
+                    else:
+                        base_duration = 8  # デフォルト
+                    n = tuplet_type
+                    m = base_duration
+                    expected = Fraction(n, m)  # 例: 3連符なら3/8
+                    actual = sum(Fraction(1, int(n.duration)) for n in tuplet_notes if n.duration.isdigit())
+                    if actual != expected:
+                        raise ParseError(f"{tuplet_type}連符の音価合計が正しくありません (合計: {actual}, 期待: {expected})", self.current_line)
                     notes.extend(tuplet_notes)
                     continue
                 
