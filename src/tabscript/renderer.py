@@ -524,18 +524,37 @@ class Renderer:
                     note_width = note.step * step_width
                     note_x += note_width
 
-                # 三連符グループの範囲を検出
+                # 三連符グループの範囲を検出（音価合計でグループ化）
                 i = 0
                 while i < len(bar.notes):
-                    if getattr(bar.notes[i], 'tuplet', None) == 3:
+                    tuplet_type = getattr(bar.notes[i], 'tuplet', None)
+                    if tuplet_type is not None:
+                        # 連符グループ開始
                         start = i
-                        # 3つの音符を1グループとして扱う
-                        end = min(start + 2, len(bar.notes) - 1)  # 3つの音符を1グループに
-                        # 開始と終了のX座標を計算（音符の数値テキストの中心位置を使用）
-                        x1 = note_x_positions[start] + 1.5 * mm  # _draw_fret_numberのオフセットと同じ
-                        x2 = note_x_positions[end] + 1.5 * mm + self.canvas.stringWidth(str(bar.notes[end].fret), "Helvetica", 10)
-                        triplet_ranges.append((x1, x2, start, end))  # 開始・終了のX座標と音符のインデックスを保存
-                        i = end + 1  # 次のグループの開始位置へ
+                        n = tuplet_type
+                        # 最大分母を取得
+                        denominators = [int(bar.notes[j].duration) for j in range(i, len(bar.notes)) if getattr(bar.notes[j], 'tuplet', None) == n and bar.notes[j].duration.isdigit()]
+                        if denominators:
+                            m = max(denominators)
+                        else:
+                            m = 8  # デフォルト
+                        expected = n / m
+                        actual = 0
+                        end = i
+                        while end < len(bar.notes) and getattr(bar.notes[end], 'tuplet', None) == n:
+                            if bar.notes[end].duration.isdigit():
+                                actual += 1 / int(bar.notes[end].duration)
+                            end += 1
+                            if abs(actual - expected) < 1e-6:
+                                break
+                        if abs(actual - expected) < 1e-6:
+                            # 範囲決定
+                            x1 = note_x_positions[start] + 1.5 * mm
+                            x2 = note_x_positions[end-1] + 1.5 * mm + self.canvas.stringWidth(str(bar.notes[end-1].fret), "Helvetica", 10)
+                            triplet_ranges.append((x1, x2, start, end-1))
+                            i = end
+                        else:
+                            i += 1
                     else:
                         i += 1
 
