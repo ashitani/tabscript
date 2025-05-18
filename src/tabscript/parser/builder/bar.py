@@ -198,7 +198,7 @@ class BarBuilder:
             # 通常のトークン処理
             token_start = current_pos
             while current_pos < content_length and not content[current_pos].isspace() and content[current_pos] not in ['(', '[']:
-                current_pos += 1
+                    current_pos += 1
             token = content[token_start:current_pos]
             if token:
                 tokens.append(token)

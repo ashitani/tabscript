@@ -296,7 +296,8 @@ class ScoreBuilder:
         # is_repeat_symbol, repeat_bars, is_dummyをコピー
         bar.is_repeat_symbol = getattr(bar_info, 'is_repeat_symbol', False)
         bar.repeat_bars = getattr(bar_info, 'repeat_bars', None)
-        bar.is_dummy = getattr(bar_info, 'is_repeat_symbol', False)  # ...記号小節ならTrue
+        # 繰り返し記号の小節はis_dummyをTrueに設定
+        bar.is_dummy = bar.is_repeat_symbol or getattr(bar_info, 'is_dummy', False)
         # コンテンツがある場合は解析
         if hasattr(bar_info, 'content') and bar_info.content:
             # BarBuilderを使用して音符を解析

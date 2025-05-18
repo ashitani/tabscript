@@ -364,6 +364,6 @@ class NoteBuilder:
             raise ParseError(f"Invalid tuplet: must contain exactly {tuplet_type} notes")
         for note in notes:
             note.tuplet = tuplet_type
-        return notes
+        return notes 
 
     build_triplet = build_tuplet 
