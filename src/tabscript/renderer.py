@@ -13,13 +13,13 @@ class NoteRenderer:
     def __init__(self, style_manager: StyleManager):
         self.style_manager = style_manager
 
-    def render_note(self, canvas, note: Note, x: float, y: float, y_offset: float = 0):
+    def render_note(self, canvas, note: Note, x: float, y: float, y_offset: float = 0, y_positions: List[float] = None):
         """音符を描画"""
         if note.is_rest:
             return
         
         if note.is_chord and getattr(note, 'is_chord_start', False):
-            self._draw_chord_notes(canvas, x, y, note)
+            self._draw_chord_notes(canvas, x, note, y_positions, y_offset)
         elif not note.is_chord:
             if '{' in str(note.fret):
                 y -= y_offset
@@ -37,13 +37,22 @@ class NoteRenderer:
         canvas.setFillColor('black')
         canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
 
-    def _draw_chord_notes(self, canvas, x: float, y: float, note: Note):
+    def _draw_chord_notes(self, canvas, x: float, note: Note, y_positions: List[float], y_offset: float = 0):
         """和音の音符を描画"""
+        # 最初の音符を描画
+        y = y_positions[note.string - 1]
+        if '{' in str(note.fret):
+            y -= y_offset
         self._draw_fret_number(canvas, x, y, note.fret, note.connect_next)
         
+        # 和音の他の音符を描画
         if hasattr(note, 'chord_notes') and note.chord_notes:
             for chord_note in note.chord_notes:
-                self._draw_fret_number(canvas, x, y, chord_note.fret, chord_note.connect_next)
+                # 各音符の弦の位置に応じてY座標を取得
+                chord_y = y_positions[chord_note.string - 1]
+                if '{' in str(chord_note.fret):
+                    chord_y -= y_offset
+                self._draw_fret_number(canvas, x, chord_y, chord_note.fret, chord_note.connect_next)
 
 class TripletRenderer:
     """三連符の描画を担当するクラス"""
@@ -304,7 +313,7 @@ class BarRenderer:
             note_x = note_x_positions[i]
             if not note.is_rest:
                 y = y_positions[note.string - 1]
-                self.note_renderer.render_note(canvas, note, note_x, y, y_offset)
+                self.note_renderer.render_note(canvas, note, note_x, y, y_offset, y_positions)
 
     def _calculate_note_positions(self, bar: Bar, x: float, width: float) -> List[float]:
         """音符の位置を計算"""
