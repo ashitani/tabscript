@@ -37,6 +37,43 @@ class NoteRenderer:
         canvas.setFillColor('black')
         canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
 
+    def _draw_tie(self, canvas, x1: float, y1: float, x2: float, y2: float, is_quarter_circle: bool = False):
+        """タイ・スラーを描画
+        
+        Args:
+            canvas: 描画対象のキャンバス
+            x1: 開始X座標
+            y1: 開始Y座標
+            x2: 終了X座標
+            y2: 終了Y座標
+            is_quarter_circle: 1/4円として描画するかどうか
+        """
+        # 曲線の制御点を計算
+        dx = x2 - x1
+        dy = y2 - y1
+        control_x1 = x1 + dx * 0.25
+        control_y1 = y1 - 3 * mm
+        control_x2 = x2 - dx * 0.25
+        control_y2 = y2 - 3 * mm
+        
+        # 1/4円の場合は制御点を調整
+        if is_quarter_circle:
+            if x2 > x1:  # 右向きの1/4円
+                control_x1 = x1 + dx * 0.5
+                control_x2 = x2
+                control_y1 = y1 - 3 * mm
+                control_y2 = y1 - 3 * mm
+            else:  # 左向きの1/4円
+                control_x1 = x1
+                control_x2 = x2 + dx * 0.5
+                control_y1 = y1 - 3 * mm
+                control_y2 = y1 - 3 * mm
+        
+        # 曲線を描画
+        canvas.setLineWidth(1.0)
+        canvas.bezier(x1, y1, control_x1, control_y1, control_x2, control_y2, x2, y2)
+        canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+
     def _draw_chord_notes(self, canvas, x: float, note: Note, y_positions: List[float], y_offset: float = 0):
         """和音の音符を描画"""
         # 最初の音符を描画
@@ -303,6 +340,20 @@ class BarRenderer:
         # 最後の縦線を描画
         canvas.line(x + width, y_positions[0], x + width, y_positions[-1])
 
+        # 小節の最初の音符が前の小節から接続されている場合
+        if bar.notes and not bar.notes[0].is_rest and bar.notes[0].string > 0:
+            first_note = bar.notes[0]
+            if hasattr(first_note, 'connect_prev') and first_note.connect_prev:
+                # 小節の左端を超えた位置から1/4円を描画
+                self.note_renderer._draw_tie(
+                    canvas,
+                    x - 2 * mm,
+                    y_positions[first_note.string - 1]-2*mm,
+                    note_x,
+                    y_positions[first_note.string - 1]-2*mm,
+                    is_quarter_circle=True
+                )
+
     def _draw_notes(self, canvas, bar: Bar, x: float, width: float, y_positions: List[float], y_offset: float):
         """音符を描画"""
         # 音符の位置を計算
@@ -314,6 +365,28 @@ class BarRenderer:
             if not note.is_rest:
                 y = y_positions[note.string - 1]
                 self.note_renderer.render_note(canvas, note, note_x, y, y_offset, y_positions)
+                
+                # タイ・スラーの描画
+                if note.connect_next:
+                    if i < len(bar.notes) - 1:  # 同じ小節内の次の音符
+                        next_note = bar.notes[i + 1]
+                        if not next_note.is_rest and next_note.string == note.string:
+                            next_x = note_x_positions[i + 1]
+                            next_y = y_positions[next_note.string - 1]
+                            fret_width = canvas.stringWidth(str(next_note.fret), "Helvetica", 10)
+                            next_x = next_x + fret_width / 2
+                            self.note_renderer._draw_tie(canvas, note_x + 2 * mm, y-2*mm, next_x+1*mm, next_y-2*mm)
+                    else:  # 小節の最後の音符で、次の小節に接続
+                        # 小節の右端を超えた位置まで1/4円を描画
+                        bar_end_x = x + width
+                        self.note_renderer._draw_tie(
+                            canvas,
+                            note_x + 2 * mm,
+                            y-2*mm,
+                            bar_end_x + 2 * mm,
+                            y-2*mm,
+                            is_quarter_circle=True
+                        )
 
     def _calculate_note_positions(self, bar: Bar, x: float, width: float) -> List[float]:
         """音符の位置を計算"""
@@ -524,10 +597,15 @@ class Renderer:
                 # 新しいページが必要かチェック
                 if y < self.margin_bottom:
                     canvas_obj.showPage()
+                    # 新しいページでは必ず上端から描画を始める
                     y = self.page_height - self.margin
-                    # 新しいページでもタイトルを描画
-                    self._draw_title(canvas_obj, y)
-                    y -= self.style_manager.get("title_margin_bottom")
+                    # 三連符、コード、ボルタの位置も上端に合わせる
+                    triplet_y = y
+                    chord_y = y
+                    volta_y = y
+                    base_y = y
+                    # 弦の位置を再計算
+                    y_positions = self.layout_calculator.calculate_string_positions(y)
             
             # セクション間の間隔
             y -= self.style_manager.get("section_spacing")
@@ -535,10 +613,8 @@ class Renderer:
             # 新しいページが必要かチェック
             if y < self.margin_bottom:
                 canvas_obj.showPage()
+                # 新しいページでは必ず上端から描画を始める
                 y = self.page_height - self.margin
-                # 新しいページでもタイトルを描画
-                self._draw_title(canvas_obj, y)
-                y -= self.style_manager.get("title_margin_bottom")
         
         canvas_obj.save()
 
