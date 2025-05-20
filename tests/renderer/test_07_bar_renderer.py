@@ -53,8 +53,8 @@ def test_render_bar_with_volta(bar_renderer, pdf_canvas, y_positions, sample_bar
 
 def test_render_bar_with_repeat(bar_renderer, pdf_canvas, y_positions, sample_bar):
     """リピート付き小節の描画テスト"""
-    sample_bar.repeat_start = True
-    sample_bar.repeat_end = True
+    sample_bar.is_repeat_start = True
+    sample_bar.is_repeat_end = True
 
     bar_renderer.render_bar(pdf_canvas, sample_bar, 100, 100, 50, y_positions)
 

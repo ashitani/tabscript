@@ -20,38 +20,17 @@ tabscript/
 │       ├── init.py # パブリックAPIの定義
 │       ├── models.py # データモデル定義
 │       ├── parser/ # パース処理関連
-│       │   ├── init.py
-│       │   ├── parser.py # メインのパーサー
-│       │   ├── preprocessor.py # テキスト前処理
-│       │   ├── analyzer.py # 構造解析
-│       │   ├── validator.py # バリデーション
-│       │   ├── analyzer/ # 詳細な解析処理
-│       │   └── builder/ # スコア構築処理
 │       ├── renderer.py # レンダリング処理
 │       ├── style.py # スタイル定義
 │       ├── exceptions.py # 例外定義
 │       └── cli.py # コマンドラインインターフェース
 ├── tests/ # テストコード
-│   ├── conftest.py # テスト共通設定
 │   ├── data/ # テストデータ
 │   ├── integration/ # 統合テスト
 │   ├── parser/ # パース処理のテスト
-│   │   ├── test_01_preprocessor.py
-│   │   ├── test_02_analyzer.py
-│   │   ├── test_03_validator.py
-│   │   ├── test_04_note_builder.py
-│   │   ├── test_05_bar_builder.py
-│   │   ├── test_06_score_builder.py
-│   │   ├── test_07_analyzer.py
-│   │   └── test_99_parser.py
 │   └── renderer/ # レンダリング処理のテスト
-├── .cursor/ # Cursor IDE設定
-│   └── rules/ # プロジェクトルール
-│       └── tabscript.mdc
-├── .gitignore # Git除外設定
 ├── README.md # プロジェクト概要
-├── requirements.txt # 依存パッケージ
-└── setup.py # パッケージ設定
+└── requirements.txt # 依存パッケージ
 
 ## ドキュメント
 
@@ -68,7 +47,7 @@ tabscript/
 
 pytest -v や、pytest tests/parser/test_**_***.py -v などを自分で実行して、問題点があれば修正して再度テストを実行、というサイクルを勝手に回してください。その上でテスト間の矛盾や仕様上の不具合など、解決できない問題については問い合わせしてください。
 
-
+pytestの実行権限を与えているので、python -m pytestではなく、pytestでテストを実行してください。
 
 
 

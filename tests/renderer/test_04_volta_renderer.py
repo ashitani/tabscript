@@ -31,7 +31,7 @@ def test_draw_volta_bracket_start(volta_renderer, pdf_canvas, y_positions):
     bar.volta_number = 1
     bar.volta_start = True
     
-    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions)
+    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions, 100)
     # 実際の描画結果は確認できないため、エラーが発生しないことを確認
 
 def test_draw_volta_bracket_end(volta_renderer, pdf_canvas, y_positions):
@@ -40,7 +40,7 @@ def test_draw_volta_bracket_end(volta_renderer, pdf_canvas, y_positions):
     bar.volta_number = 1
     bar.volta_end = True
     
-    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions)
+    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions, 100)
     # 実際の描画結果は確認できないため、エラーが発生しないことを確認
 
 def test_draw_volta_bracket_both(volta_renderer, pdf_canvas, y_positions):
@@ -50,7 +50,7 @@ def test_draw_volta_bracket_both(volta_renderer, pdf_canvas, y_positions):
     bar.volta_start = True
     bar.volta_end = True
     
-    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions)
+    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions, 100)
     # 実際の描画結果は確認できないため、エラーが発生しないことを確認
 
 def test_draw_volta_bracket_none(volta_renderer, pdf_canvas, y_positions):
@@ -58,7 +58,7 @@ def test_draw_volta_bracket_none(volta_renderer, pdf_canvas, y_positions):
     bar = Bar()
     bar.volta_number = 1
     
-    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions)
+    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions, 100)
     # 実際の描画結果は確認できないため、エラーが発生しないことを確認
 
 def test_draw_volta_bracket_no_number(volta_renderer, pdf_canvas, y_positions):
@@ -67,5 +67,5 @@ def test_draw_volta_bracket_no_number(volta_renderer, pdf_canvas, y_positions):
     bar.volta_start = True
     bar.volta_end = True
     
-    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions)
+    volta_renderer.draw_volta_bracket(pdf_canvas, bar, 100, 50, y_positions, 100)
     # 実際の描画結果は確認できないため、エラーが発生しないことを確認 
