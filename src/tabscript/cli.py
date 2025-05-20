@@ -47,7 +47,7 @@ def main():
             # レンダラーの初期化とレンダリング
             if is_pdf:
                 renderer = Renderer(score, debug_mode=args.debug)
-                renderer.render_pdf(output_file, debug=args.debug)
+                renderer.render_pdf(output_file)
             else:
                 # テキスト出力の場合の処理（未実装）
                 with open(output_file, 'w') as f:

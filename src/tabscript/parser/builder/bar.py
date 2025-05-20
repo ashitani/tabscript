@@ -224,8 +224,23 @@ class BarBuilder:
                     tuplet_type = int(m.group(1))
                     tuplet_content = m.group(2)
                     tuplet_notes = []
-                    for note_token in tuplet_content.split():
-                        note = self.note_builder.parse_note(note_token, current_duration, current_chord)
+                    tuplet_tokens = tuplet_content.split()
+                    self.debug_print(f"最初のトークン: {tuplet_tokens[0] if tuplet_tokens else 'なし'}")
+                    # 最初のトークンで音価を決定（休符も考慮）
+                    if tuplet_tokens:
+                        parts = tuplet_tokens[0].split(':', 1)
+                        tuplet_duration = parts[1] if len(parts) > 1 else "4"
+                    else:
+                        tuplet_duration = "4"
+                    for note_token in tuplet_tokens:
+                        # 休符トークンがrで始まり:を含まない場合、r:XXの形に変換
+                        if note_token.startswith('r') and ':' not in note_token and len(note_token) > 1:
+                            note_token = f"r:{note_token[1:]}"
+                        split_result = note_token.split(':', 1)
+                        self.debug_print(f"分割: note_token={note_token}, split_result={split_result}")
+                        duration_for_note = split_result[1] if len(split_result) > 1 else tuplet_duration
+                        self.debug_print(f"連符: note_token={note_token}, duration_for_note={duration_for_note}")
+                        note = self.note_builder.parse_note(note_token, duration_for_note, current_chord)
                         note.tuplet = tuplet_type
                         tuplet_notes.append(note)
                     # 音価合計で判定
@@ -237,7 +252,8 @@ class BarBuilder:
                     n = tuplet_type
                     m = base_duration
                     expected = Fraction(n, m)  # 例: 3連符なら3/8
-                    actual = sum(Fraction(1, int(n.duration)) for n in tuplet_notes if n.duration.isdigit())
+                    # 休符も含めて音価を計算
+                    actual = sum(Fraction(1, int(n.duration)) for n in tuplet_notes)
                     if actual != expected:
                         raise ParseError(f"{tuplet_type}連符の音価合計が正しくありません (合計: {actual}, 期待: {expected})", self.current_line)
                     notes.extend(tuplet_notes)

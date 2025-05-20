@@ -5,8 +5,352 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 from .models import Score, Section, Bar, Note
 from .exceptions import TabScriptError
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from .style import StyleManager
+
+class NoteRenderer:
+    """音符の描画を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+
+    def render_note(self, canvas, note: Note, x: float, y: float, y_offset: float = 0):
+        """音符を描画"""
+        if note.is_rest:
+            return
+        
+        if note.is_chord and getattr(note, 'is_chord_start', False):
+            self._draw_chord_notes(canvas, x, y, note)
+        elif not note.is_chord:
+            if '{' in str(note.fret):
+                y -= y_offset
+            self._draw_fret_number(canvas, x, y, note.fret, note.connect_next)
+
+    def _draw_fret_number(self, canvas, x: float, y: float, fret: str, connect_next: bool = False):
+        """フレット番号を描画"""
+        canvas.setFont("Helvetica", 10)
+        fret_str = "X" if fret == "X" else str(fret)
+        
+        text_width = canvas.stringWidth(fret_str, "Helvetica", 10)
+        text_height = 10
+        canvas.setFillColor('white')
+        canvas.rect(x + 1 * mm, y - text_height/2, text_width + 1, text_height, fill=1, stroke=0)
+        canvas.setFillColor('black')
+        canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
+
+    def _draw_chord_notes(self, canvas, x: float, y: float, note: Note):
+        """和音の音符を描画"""
+        self._draw_fret_number(canvas, x, y, note.fret, note.connect_next)
+        
+        if hasattr(note, 'chord_notes') and note.chord_notes:
+            for chord_note in note.chord_notes:
+                self._draw_fret_number(canvas, x, y, chord_note.fret, chord_note.connect_next)
+
+class TripletRenderer:
+    """三連符の描画を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+
+    def detect_triplet_ranges(self, bar: Bar, note_x_positions: List[float], canvas) -> List[Tuple[float, float, int, int]]:
+        """三連符の範囲を検出"""
+        triplet_ranges = []
+        i = 0
+        while i < len(bar.notes):
+            tuplet_type = getattr(bar.notes[i], 'tuplet', None)
+            if tuplet_type is not None:
+                start = i
+                n = tuplet_type
+                denominators = [int(bar.notes[j].duration) for j in range(i, len(bar.notes)) 
+                              if getattr(bar.notes[j], 'tuplet', None) == n and bar.notes[j].duration.isdigit()]
+                m = max(denominators) if denominators else 8
+                expected = n / m
+                actual = 0
+                end = i
+                while end < len(bar.notes) and getattr(bar.notes[end], 'tuplet', None) == n:
+                    if bar.notes[end].duration.isdigit():
+                        actual += 1 / int(bar.notes[end].duration)
+                    end += 1
+                    if abs(actual - expected) < 1e-6:
+                        break
+                if abs(actual - expected) < 1e-6:
+                    x1 = note_x_positions[start] + 1.5 * mm
+                    x2 = note_x_positions[end-1] + 1.5 * mm + canvas.stringWidth(str(bar.notes[end-1].fret), "Helvetica", 10)
+                    triplet_ranges.append((x1, x2, start, end-1))
+                    i = end
+                else:
+                    i += 1
+            else:
+                i += 1
+        return triplet_ranges
+
+    def draw_triplet_marks(self, canvas, triplet_ranges: List[Tuple[float, float, int, int]], y_positions: List[float], triplet_y: float = None):
+        """三連符記号を描画"""
+        for x1, x2, start, end in triplet_ranges:
+            string_spacing = self.style_manager.get("string_spacing")
+            y_triplet = triplet_y if triplet_y is not None else y_positions[0] + string_spacing  # triplet_yが指定されていない場合は従来通り
+            text_y_offset = - string_spacing * 0.1
+            bracket_height = self.style_manager.get("triplet_bracket_height", 2.5 * mm)
+            
+            # 上線
+            canvas.line(x1, y_triplet, x2, y_triplet)
+            
+            # 左縦線
+            canvas.line(x1, y_triplet, x1, y_triplet - bracket_height)
+            
+            # 右縦線
+            canvas.line(x2, y_triplet, x2, y_triplet - bracket_height)
+            
+            # 3の数字
+            canvas.setFont("Helvetica-Bold", 10)
+            text = "3"
+            text_width = canvas.stringWidth(text, "Helvetica-Bold", 10)
+            text_height = 10
+            mid_x = (x1 + x2) / 2
+            
+            # 背景
+            canvas.setFillColor('white')
+            canvas.rect(mid_x - text_width/2 - 1, y_triplet - text_height/2 - 1 - text_y_offset, 
+                       text_width + 2, text_height + 2, fill=1, stroke=0)
+            
+            # テキスト
+            canvas.setFillColor('black')
+            canvas.drawString(mid_x - text_width/2, y_triplet - text_height/2 - 1 - text_y_offset, text)
+
+class VoltaRenderer:
+    """ボルタブラケットの描画を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+
+    def draw_volta_bracket(self, canvas, bar: Bar, x: float, width: float, y_positions: List[float], y: float):
+        """ボルタブラケットを描画"""
+        # volta_yを基準に水平線の位置を計算
+        bracket_y = y
+        
+        if bar.volta_start or bar.volta_end:
+            # 横線を描画
+            canvas.setLineWidth(self.style_manager.get("volta_line_width"))
+            left_x = x + self.style_manager.get("volta_margin")
+            right_x = x + width - self.style_manager.get("volta_margin")
+            canvas.line(left_x, bracket_y, right_x, bracket_y)
+            canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+        
+        if bar.volta_start:
+            # 左線と数字を描画
+            canvas.setLineWidth(self.style_manager.get("volta_line_width"))
+            left_x = x + self.style_manager.get("volta_margin")
+            canvas.line(left_x, bracket_y, 
+                       left_x, y_positions[0] + self.style_manager.get("string_bottom_margin"))
+            canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+            
+            canvas.setFont("Helvetica-Bold", 10)
+            canvas.drawString(left_x + 2 * mm, 
+                            bracket_y - self.style_manager.get("volta_y_offset") - 1.0 * mm,
+                            f"{bar.volta_number}.")
+        
+        if bar.volta_end:
+            # 右線を描画
+            canvas.setLineWidth(self.style_manager.get("volta_line_width"))
+            right_x = x + width - self.style_manager.get("volta_margin")
+            canvas.line(right_x, bracket_y, 
+                       right_x, y_positions[0] + self.style_manager.get("string_bottom_margin"))
+            canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+
+class RepeatRenderer:
+    """繰り返し記号の描画を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+
+    def draw_repeat_start(self, canvas, x: float, y_positions: List[float]):
+        """繰り返し開始記号を描画"""
+        # 太線を描画
+        canvas.setLineWidth(self.style_manager.get("repeat_line_width") )
+        canvas.line(x, y_positions[0], x, y_positions[-1])
+        canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+
+        # 細線を描画（右にシフト）
+        x_shift = x + self.style_manager.get("repeat_line_spacing") + 0.5 * mm  # 0.5mm右にシフト
+        canvas.line(x_shift, y_positions[0], x_shift, y_positions[-1])
+
+        # ドットを描画（右にシフト）
+        dot_y = (y_positions[0] + y_positions[-1]) / 2
+        dot_spacing = 6.0 * mm
+        dot_offset = self.style_manager.get("repeat_x_offset") 
+        canvas.circle(x + dot_offset,
+                     dot_y + dot_spacing/2,
+                     self.style_manager.get("repeat_dot_size") * 2/3,
+                     fill=1)
+        canvas.circle(x + dot_offset,
+                     dot_y - dot_spacing/2,
+                     self.style_manager.get("repeat_dot_size") * 2/3,
+                     fill=1)
+
+    def draw_repeat_end(self, canvas, x: float, y_positions: List[float]):
+        """繰り返し終了記号を描画"""
+        # 太線を描画
+        canvas.setLineWidth(self.style_manager.get("repeat_line_width"))
+        canvas.line(x, y_positions[0], x, y_positions[-1])
+        canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+
+        # 細線を描画（左にシフト）
+        x_shift = x - self.style_manager.get("repeat_line_spacing") - 0.5 * mm  # 0.5mm左にシフト
+        canvas.line(x_shift, y_positions[0], x_shift, y_positions[-1])
+
+        # ドットを描画（左にシフト）
+        dot_y = (y_positions[0] + y_positions[-1]) / 2
+        dot_spacing = 6.0 * mm
+        dot_offset = self.style_manager.get("repeat_x_offset")
+        canvas.circle(x - dot_offset,
+                     dot_y + dot_spacing/2,
+                     self.style_manager.get("repeat_dot_size") * 2/3,
+                     fill=1)
+        canvas.circle(x - dot_offset,
+                     dot_y - dot_spacing/2,
+                     self.style_manager.get("repeat_dot_size") * 2/3,
+                     fill=1)
+
+class DummyBarRenderer:
+    """ダミー小節の描画を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+
+    def draw_dummy_bar(self, canvas, x: float, width: float, y_positions: List[float]):
+        """ダミー小節を描画"""
+        center_x = x + (width / 2)
+        center_y = (y_positions[0] + y_positions[-1]) / 2
+        
+        # 斜め線の長さと角度
+        slash_length = 12.0 * mm
+        dx = (slash_length / 2) * 0.7071
+        dy = (slash_length / 2) * 0.7071
+        
+        # 斜め線
+        slash_width = 1.05 * mm
+        canvas.setLineWidth(slash_width)
+        canvas.line(center_x - dx, center_y - dy,
+                   center_x + dx, center_y + dy)
+        canvas.setLineWidth(self.style_manager.get("normal_line_width"))
+        
+        # ドット
+        dot_base_length = 6.0 * mm
+        dot_dx = (dot_base_length / 2) * 0.7071
+        dot_dy = (dot_base_length / 2) * 0.7071
+        dot_radius = 0.7 * mm
+        dot_offset_x = dot_dx + 1.0 * mm
+        dot_offset_y = dot_dy + 0.7 * mm
+        canvas.circle(center_x - dot_offset_x, center_y + dot_offset_y, dot_radius, fill=1)
+        canvas.circle(center_x + dot_offset_x, center_y - dot_offset_y, dot_radius, fill=1)
+
+class BarRenderer:
+    """小節の描画を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+        self.note_renderer = NoteRenderer(style_manager)
+        self.triplet_renderer = TripletRenderer(style_manager)
+        self.volta_renderer = VoltaRenderer(style_manager)
+        self.repeat_renderer = RepeatRenderer(style_manager)
+        self.dummy_bar_renderer = DummyBarRenderer(style_manager)
+
+    def render_bar(self, canvas, bar: Bar, x: float, y: float, width: float, y_positions: List[float], y_offset: float = 0):
+        """小節を描画"""
+        # 小節の余白を計算
+        bar_margin = 1.5 * mm
+        
+        # 繰り返し記号のためのマージンを追加
+        repeat_margin = 2.0 * mm if bar.is_repeat_start or bar.is_repeat_end else 0
+        
+        # 小節の幅を計算
+        usable_width = width - (2 * bar_margin) - repeat_margin
+        
+        # 音符の開始位置を計算
+        note_x = x + bar_margin
+        if bar.is_repeat_start and bar.volta_number is None:
+            note_x += repeat_margin  # 反復開始記号分、右にずらす
+        
+        # 音符の終了位置を計算
+        note_end_x = x + width - bar_margin
+        if bar.is_repeat_end or bar.volta_end:
+            note_end_x -= repeat_margin  # 反復終了記号分、左にずらす
+        
+        # 実際に使用可能な幅を再計算
+        usable_width = note_end_x - note_x
+        
+        # 縦線を描画
+        if bar.is_repeat_start and bar.volta_number is None:  # volta_numberがNoneの場合のみ描画
+            self.repeat_renderer.draw_repeat_start(canvas, x, y_positions)
+        elif bar.is_repeat_end or bar.volta_end:  # 反復終了またはボルタ終了の場合
+            self.repeat_renderer.draw_repeat_end(canvas, x + width, y_positions)
+        else:
+            canvas.line(x, y_positions[0], x, y_positions[-1])
+        
+        # 横線を描画
+        for y in y_positions:
+            canvas.line(x, y, x + width, y)
+        
+        # 音符を描画
+        if not bar.is_dummy:
+            self._draw_notes(canvas, bar, note_x, usable_width, y_positions, y_offset)
+        else:
+            self.dummy_bar_renderer.draw_dummy_bar(canvas, x, width, y_positions)
+        
+        # 最後の縦線を描画
+        canvas.line(x + width, y_positions[0], x + width, y_positions[-1])
+
+    def _draw_notes(self, canvas, bar: Bar, x: float, width: float, y_positions: List[float], y_offset: float):
+        """音符を描画"""
+        # 音符の位置を計算
+        note_x_positions = self._calculate_note_positions(bar, x, width)
+        
+        # 音符を描画
+        for i, note in enumerate(bar.notes):
+            note_x = note_x_positions[i]
+            if not note.is_rest:
+                y = y_positions[note.string - 1]
+                self.note_renderer.render_note(canvas, note, note_x, y, y_offset)
+
+    def _calculate_note_positions(self, bar: Bar, x: float, width: float) -> List[float]:
+        """音符の位置を計算"""
+        note_x_positions = []
+        current_x = x
+        total_steps = sum(note.step for note in bar.notes)
+        step_width = width / total_steps if total_steps > 0 else width
+        
+        for note in bar.notes:
+            note_x_positions.append(current_x)
+            current_x += note.step * step_width
+        
+        return note_x_positions
+
+    def _draw_chord(self, canvas, x: float, y: float, chord: str):
+        """コード名を描画"""
+        canvas.setFont("Helvetica", 10)
+        canvas.drawString(x + 0.5 * mm, y, chord)
+
+class LayoutCalculator:
+    """レイアウト計算を担当するクラス"""
+    def __init__(self, style_manager: StyleManager):
+        self.style_manager = style_manager
+
+    def calculate_section_layout(self, bars_per_line: int, page_width: float) -> tuple:
+        """bars_per_lineに基づいてレイアウトを計算"""
+        bar_group_size = bars_per_line
+        num_groups = 1  # 1行ごとに1グループとみなす
+        bar_group_margin = self.style_manager.get("bar_group_margin")
+        available_width = page_width - (bar_group_margin * (num_groups - 1))
+        bar_width = available_width / bar_group_size
+        bar_group_width = bar_width * bar_group_size
+        return bar_width, bar_group_width, bar_group_margin
+
+    def calculate_bar_positions(self, bars_per_line: int, x: float, bar_width: float, bar_group_width: float, bar_group_margin: float) -> list:
+        """bars_per_lineに基づいて小節の位置を計算"""
+        positions = []
+        for i in range(bars_per_line):
+            # 三連符記号がある場合は追加のマージンを設定
+            bar_x = x + (i * bar_width) 
+            positions.append(bar_x)
+        return positions
+
+    def calculate_string_positions(self, y: float) -> list:
+        string_spacing = self.style_manager.get("string_spacing")
+        return [y - (i * string_spacing) for i in range(6)]
 
 class Renderer:
     def __init__(self, score: Score, debug_mode: bool = False, style_file=None):
@@ -18,170 +362,187 @@ class Renderer:
             style_file: スタイル設定ファイルのパス
         """
         self.score = score
-        self.canvas = None
-        self.current_x = 0
-        self.current_y = 0
         self.debug_mode = debug_mode
-        
-        # スタイルマネージャーを初期化
         self.style_manager = StyleManager(style_file)
         
+        # レンダラーを初期化
+        self.bar_renderer = BarRenderer(self.style_manager)
+        self.layout_calculator = LayoutCalculator(self.style_manager)
+        
         # レイアウト設定
-        self.margin = 5 * mm
-        self.margin_bottom = 20 * mm  # 追加：下マージン
-        
-        # A4縦向きのサイズ設定
-        self.page_width = A4[0]
-        self.debug_print(f"page_width = {self.page_width}")
-        self.page_height = A4[1]
-        self.usable_width = self.page_width - (2 * self.margin)
-        self.debug_print(f"usable_width = {self.usable_width}")
-        
-        self.debug_print(f"__init__: score object id = {id(self.score)}")
-        
-        # 小節の幅を計算は不要（各Columnが自身のbars_per_lineを持つため）
-        self.debug_print(f"A4 size = {A4}")
+        self.page_width = 210 * mm
+        self.page_height = 297 * mm
+        self.margin = 20 * mm
+        self.margin_bottom = 20 * mm
 
     def debug_print(self, *args, **kwargs):
         """デバッグモードの時だけ出力"""
         if self.debug_mode:
             print("DEBUG:", *args, **kwargs)
 
-    def render_pdf(self, output_path: str, debug: bool = False):
+    def render_pdf(self, output_path: str):
         """タブ譜をPDFとしてレンダリング"""
-        self.debug_mode = debug
-        
         self.debug_print(f"render_pdf start: score object id = {id(self.score)}")
         
         # A4縦向きでキャンバスを作成
-        self.canvas = canvas.Canvas(output_path, pagesize=A4)
+        canvas_obj = canvas.Canvas(output_path, pagesize=A4)
         
-        # タイトルと設定を出力
-        y = self.page_height - self.margin - 5 * mm
-        self.draw_title(y)
-        y -= 5 * mm
-        self.draw_metadata(y)
+        # 1. タイトルを描画
+        y = self.page_height - self.margin
+        self._draw_title(canvas_obj, y)
+        
+        # 2. タイトルの下に移動
+        y -= self.style_manager.get("title_margin_bottom")
+        
+        # 3. メタデータを描画
+        self._draw_metadata(canvas_obj, y)
         y -= 5 * mm
         
         # セクションごとに描画
+        bars_per_line = self.score.bars_per_line
         for section in self.score.sections:
             self.debug_print(f"Processing section: {section.name}")
             
-            # セクション名を描画（空のセクション名の場合はスキップ）
+            # 4. セクション名を描画（空のセクション名の場合はスキップ）
             if section.name:
-                self.canvas.setFont("Helvetica-Bold", 12)
-                self.canvas.drawString(self.margin, y, f"[{section.name}]")
+                canvas_obj.setFont("Helvetica-Bold", 12)
+                canvas_obj.drawString(self.margin, y, f"[{section.name}]")
                 y -= self.style_manager.get("section_name_margin_bottom")
             
             # 各行を描画
             for i, column in enumerate(section.columns):
-                # 前の行の最後の小節の最後の音符が接続を持っているか確認
-                has_previous_connection = False
-                if i > 0 and len(section.columns[i-1].bars) > 0:
-                    last_bar = section.columns[i-1].bars[-1]
-                    if len(last_bar.notes) > 0 and last_bar.notes[-1].connect_next:
-                        has_previous_connection = True
+                # 改行後の初期位置
+                if i == 0:  # 最初のカラム
+                    # セクション名の下の位置を維持
+                    pass
+                else:  # 2行目以降
+                    # 前のカラムの最後の弦の位置から計算
+                    y = y_positions[-1] - self.style_manager.get("string_bottom_margin")
+
+                # レイアウトを計算
+                bar_width, bar_group_width, bar_group_margin = self.layout_calculator.calculate_section_layout(
+                    bars_per_line, self.page_width - (2 * self.margin)
+                )
+                bar_positions = self.layout_calculator.calculate_bar_positions(
+                    bars_per_line, self.margin, bar_width, bar_group_width, bar_group_margin
+                )
+
+                # 三連符、コード、ボルタの有無をチェック
+                has_triplet = False  # 三連符の有無をチェック
+                has_chord = False    # コードの有無をチェック
+                has_volta = False    # ボルタの有無をチェック
+
+                # 各小節の要素をチェック
+                for bar in column.bars:
+                    # 三連符のチェック
+                    for note in bar.notes:
+                        if hasattr(note, 'tuplet') and note.tuplet:
+                            has_triplet = True
+                            break
+                    
+                    # コードのチェック
+                    if bar.notes and bar.notes[0].chord:
+                        has_chord = True
+                    
+                    # ボルタのチェック
+                    if bar.volta_number is not None:
+                        has_volta = True
+
+                # 要素の重ね順：三連符 > コード > ボルタブラケット
+                triplet_y = y  # 三連符の位置
+                chord_y = y  # コードの位置
+                volta_y = y  # ボルタブラケットの位置
+
+                # 三連符、コード、ボルタの有無に応じて行の開始位置を下げる
+                if has_volta:
+                    volta_y = y  # ボルタブラケットの位置
+                    y -= self.style_manager.get("volta_vertical_margin", 4 * mm)
+
+                if has_chord:
+                    chord_y = y  # コードの位置
+                    y -= self.style_manager.get("chord_vertical_margin", 4 * mm)
+
+                if has_triplet:
+                    triplet_y = y  # 三連符の位置
+                    y -= self.style_manager.get("triplet_vertical_margin", 4 * mm)
+
+                base_y = y
+
+                # 弦の位置を計算
+                y_positions = self.layout_calculator.calculate_string_positions(y)
+
+                # 小節を描画
+                for j, bar in enumerate(column.bars):
+                    # 小節の余白を計算
+                    bar_margin = 1.5 * mm
+                    repeat_margin = 2.0 * mm if bar.is_repeat_start or bar.is_repeat_end else 0
+                    usable_width = bar_width - (2 * bar_margin) - repeat_margin
+                    note_x = bar_positions[j] + bar_margin + (repeat_margin if bar.is_repeat_start else 0)
+
+                    # 音符の位置を計算
+                    note_positions = self.bar_renderer._calculate_note_positions(bar, note_x, usable_width)
+
+                    # ボルタブラケットを描画（最上段）
+                    if bar.volta_number is not None:
+                        self.bar_renderer.volta_renderer.draw_volta_bracket(
+                            canvas_obj, bar, bar_positions[j], bar_width, y_positions, volta_y
+                        )
+                    
+                    
+                    # コードを描画（中段）
+                    if bar.notes and bar.notes[0].chord:
+                        self.bar_renderer._draw_chord(
+                            canvas_obj,
+                            note_positions[0],  # 最初の音符の位置を使用
+                            chord_y,
+                            bar.notes[0].chord
+                        )
+
+                    # 三連符記号を描画（下段）
+                    triplet_ranges = self.bar_renderer.triplet_renderer.detect_triplet_ranges(bar, note_positions, canvas_obj)
+                    if triplet_ranges:
+                        self.bar_renderer.triplet_renderer.draw_triplet_marks(canvas_obj, triplet_ranges, y_positions, triplet_y)
+
+
+                    # 小節と音符を描画
+                    self.bar_renderer.render_bar(
+                        canvas_obj, bar, bar_positions[j], base_y, bar_width, y_positions
+                    )
                 
-                # n番カッコを含むかチェック
-                has_volta = any(bar.volta_number is not None for bar in column.bars)
-                
-                # 小節グループを描画（接続情報を渡す）
-                y = self._render_bar_group_pdf(column.bars, column.bars_per_line, y, has_previous_connection)
-                
-                # セクション内の改行時に適度な間隔を追加
-                y -= self.style_manager.get("section_row_spacing")
+                # 7. 最高弦の下端から下に移動
+                y = y_positions[-1] - self.style_manager.get("string_bottom_margin")
                 
                 # 新しいページが必要かチェック
                 if y < self.margin_bottom:
-                    self.canvas.showPage()
-                    y = self.page_height - self.margin - 5 * mm
+                    canvas_obj.showPage()
+                    y = self.page_height - self.margin
+                    # 新しいページでもタイトルを描画
+                    self._draw_title(canvas_obj, y)
+                    y -= self.style_manager.get("title_margin_bottom")
             
-            y -= self.style_manager.get("section_spacing")  # セクション間の間隔
+            # セクション間の間隔
+            y -= self.style_manager.get("section_spacing")
             
             # 新しいページが必要かチェック
             if y < self.margin_bottom:
-                self.canvas.showPage()
-                y = self.page_height - self.margin - 5 * mm
+                canvas_obj.showPage()
+                y = self.page_height - self.margin
+                # 新しいページでもタイトルを描画
+                self._draw_title(canvas_obj, y)
+                y -= self.style_manager.get("title_margin_bottom")
         
-        self.canvas.save()
+        canvas_obj.save()
 
-    def draw_title(self, y: float):
+    def _draw_title(self, canvas_obj, y: float):
         """タイトルを描画（センタリング）"""
-        self.canvas.setFont("Helvetica-Bold", 16)
-        title_width = self.canvas.stringWidth(self.score.title, "Helvetica-Bold", 16)
+        canvas_obj.setFont("Helvetica-Bold", 16)
+        title_width = canvas_obj.stringWidth(self.score.title, "Helvetica-Bold", 16)
         x = (self.page_width - title_width) / 2  # センタリングのためのX座標を計算
-        self.canvas.drawString(x, y, self.score.title)
-        self.current_y -= self.style_manager.get("title_margin_bottom")  # スタイルシートから値を取得
+        canvas_obj.drawString(x, y, self.score.title)
 
-    def draw_metadata(self, y: float):
+    def _draw_metadata(self, canvas_obj, y: float):
         """メタデータを描画"""
-        # チューニングと拍子の表示を削除
-        self.current_y -= 5 * mm  # 15mmから5mmに縮小
-
-    def _render_bar_pdf(self, bar: Bar):
-        """1小節を描画"""
-        string_count = self._get_string_count()
-        bar_margin = 1.5 * mm
-
-        # 小節の分解能を計算
-        resolution = self._calculate_bar_resolution(bar)
-        total_steps = sum(self._duration_to_steps(note.duration, resolution) for note in bar.notes)
-        
-        # 各弦の位置を計算
-        y_positions = [self.current_y - (i * self.style_manager.get("string_spacing")) for i in range(string_count)]
-        
-        # 小節を描画
-        current_x = self.margin
-        
-        # このステップ幅で描画（余白を考慮）
-        step_width = (self.usable_width - bar_margin) / total_steps
-        
-        # 縦線を描画
-        self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
-        
-        # 横線を描画
-        for y in y_positions:
-            self.canvas.line(current_x, y, current_x + self.usable_width, y)
-        
-        # 音符を配置（余白から開始）
-        note_x = current_x + bar_margin
-        for note in bar.notes:
-            note_steps = self._duration_to_steps(note.duration, resolution)
-            
-            # コードを描画
-            if note.chord:
-                self._draw_chord(note_x, y_positions[0], note.chord)
-            
-            if not note.is_rest:
-                if note.is_chord:
-                    # 主音を描画
-                    y = y_positions[note.string - 1]
-                    self._draw_fret_number(note_x, y, note.fret, note.connect_next)
-                    
-                    # 和音の他の音を描画
-                    for chord_note in note.chord_notes:
-                        y = y_positions[chord_note.string - 1]
-                        self._draw_fret_number(note_x, y, chord_note.fret, chord_note.connect_next)
-                else:
-                    # 通常の音符を描画
-                    y = y_positions[note.string - 1]
-                    self._draw_fret_number(note_x, y, note.fret, note.connect_next)
-            
-            note_x += note_steps * step_width
-        
-        # 最後の縦線を描画
-        self.canvas.line(current_x + self.usable_width, y_positions[0], current_x + self.usable_width, y_positions[-1])
-
-    def _get_string_count(self) -> int:
-        """チューニング設定から弦の数を取得"""
-        tuning_map = {
-            "guitar": 6,
-            "guitar7": 7,
-            "bass": 4,
-            "bass5": 5,
-            "ukulele": 4
-        }
-        return tuning_map.get(self.score.tuning, 6)  # デフォルトは6弦 
+        y -= 5 * mm  # 15mmから5mmに縮小
 
     def render_text(self, output_path: str):
         """タブ譜をテキスト形式でレンダリング"""
@@ -271,83 +632,6 @@ class Renderer:
                 f.write(bar_lines[string])
             f.write("\n")
 
-    def _parse_duration(self, duration: str) -> Tuple[int, bool]:
-        """音価文字列を解析して、基本の音価と付点の有無を返す"""
-        self.debug_print(f"\n=== _parse_duration ===")
-        self.debug_print(f"Input: duration='{duration}'")
-        try:
-            if duration.endswith('.'):
-                base = int(duration[:-1])
-                self.debug_print(f"Found dot: base={base}, has_dot=True")
-                return base, True
-            else:
-                base = int(duration)
-                self.debug_print(f"No dot: base={base}, has_dot=False")
-                return base, False
-        except ValueError as e:
-            self.debug_print(f"Error parsing duration: '{duration}'")
-            raise e
-
-    def _calculate_bar_resolution(self, bar: Bar) -> int:
-        """小節内の分解能を計算"""
-        self.debug_print("\n=== _calculate_bar_resolution ===")
-        min_duration = float('inf')
-        for i, note in enumerate(bar.notes):
-            self.debug_print(f"Processing note {i}: duration='{note.duration}'")
-            try:
-                base, has_dot = self._parse_duration(note.duration)
-                self.debug_print(f"  base={base}, has_dot={has_dot}")
-                min_duration = min(min_duration, base)  # 最小音価を見つける
-                if has_dot:
-                    self.debug_print(f"  Note has dot")
-            except ValueError as e:
-                self.debug_print(f"Error processing duration: {note.duration}")
-                raise e
-        
-        # 最小音価を分解能とする（16分音符なら16）
-        result = min_duration
-        self.debug_print(f"Final resolution: {result} (min_duration={min_duration})")
-        return result
-
-    def _duration_to_steps(self, duration: str, resolution: int) -> int:
-        """音価をステップ数に変換"""
-        self.debug_print(f"\n=== _duration_to_steps ===")
-        self.debug_print(f"Input: duration='{duration}', resolution={resolution}")
-        
-        base, has_dot = self._parse_duration(duration)
-        self.debug_print(f"Parsed: base={base}, has_dot={has_dot}")
-        
-        # resolution は最小音価なので、
-        # 例：resolution=16（16分音符が基準）の場合
-        # - 16分音符 = 1ステップ
-        # - 8分音符 = 2ステップ
-        # - 4分音符 = 4ステップ
-        steps = resolution // base  # まず基本のステップ数を計算
-        self.debug_print(f"Base steps: {steps}")
-        
-        if has_dot:
-            # 付点の場合は1.5倍（切り捨てを避けるため、先に2倍して3を掛ける）
-            steps = (steps * 3) // 2  # 単純に1.5倍
-            self.debug_print(f"After dot: {steps}")
-        
-        self.debug_print(f"Final steps: {steps}")
-        return steps  # max(1, steps)は不要（既に1以上のはず）
-
-    def _write_empty_steps(self, f, string_count: int, steps: int):
-        """空のステップを出力"""
-        for _ in range(string_count):
-            f.write("-" * (4 * steps) + "\n")
-
-    def _write_note_steps(self, f, string_count: int, note: Note, steps: int):
-        """音符のステップを出力"""
-        for string in range(1, string_count + 1):
-            if string == note.string:
-                # フレット番号を右詰めで出力
-                fret_str = str(note.fret).rjust(2, '-')
-                f.write(f"--{fret_str}" + "-" * (4 * (steps - 1)) + "\n")
-            else:
-                f.write("-" * (4 * steps) + "\n") 
-
     def render_score(self, output_path: str):
         """タブ譜をファイルとして出力"""
         if not self.score:
@@ -356,364 +640,15 @@ class Renderer:
         if output_path.endswith('.pdf'):
             self.render_pdf(output_path)
         else:
-            self.render_text(output_path) 
+            self.render_text(output_path)
 
-    def _draw_fret_number(self, x: float, y: float, fret: str, connect_next: bool = False):
-        """フレット番号を描画（ヘルパーメソッド）"""
-        self.canvas.setFont("Helvetica", 10)
-        fret_str = "X" if fret == "X" else str(fret)
-        
-        # デバッグ出力
-        self.debug_print(f"Drawing fret: {fret}, connect_next: {connect_next}")
-        
-        # 注意: 接続フラグがある場合でも&記号を表示しない（元の実装では表示していた）
-        # 黒丸も表示しない
-        
-        text_width = self.canvas.stringWidth(fret_str, "Helvetica", 10)
-        text_height = 10
-        self.canvas.setFillColor('white')
-        self.canvas.rect(x + 1 * mm, y - text_height/2, text_width + 1, text_height, fill=1, stroke=0)
-        self.canvas.setFillColor('black')
-        self.canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
-        
-        # 接続フラグがある場合の黒丸表示処理を削除
-
-    def _draw_chord(self, x: float, y: float, chord: str):
-        """コード名を描画（ヘルパーメソッド）"""
-        self.canvas.setFont("Helvetica", 10)
-        text_width = self.canvas.stringWidth(chord, "Helvetica", 10)
-        text_height = 10
-        # コードと1弦の間隔を調整（スタイルシートから値を取得）
-        self.canvas.drawString(x + 1 * mm, y + self.style_manager.get("chord_offset"), chord)
-
-    def _render_bar_group_pdf(self, bars: List[Bar], bars_per_line: int, y: float, has_previous_connection: bool = False):
-        """小節グループを描画"""
-        self.debug_print("\n=== _render_bar_group_pdf ===")
-        self.debug_print("Input bars:")
-        for i, bar in enumerate(bars):
-            self.debug_print(f"\nBar {i}:")
-            self.debug_print(f"  Resolution: {bar.resolution}")
-            for j, note in enumerate(bar.notes):
-                self.debug_print(f"  Note {j}:")
-                self.debug_print(f"    string: {note.string}")
-                self.debug_print(f"    fret: {note.fret}")
-                self.debug_print(f"    duration: {note.duration}")
-                self.debug_print(f"    step: {note.step}")  # パース時に計算済み！
-
-        string_count = self._get_string_count()
-        bar_margin = 1.5 * mm
-        
-        # 小節グループの幅を計算
-        if bars_per_line == 1:
-            group_width = self.usable_width
-            bar_width = group_width
-        else:
-            group_width = self.usable_width / bars_per_line * len(bars)
-            bar_width = group_width / len(bars)
-        
-        # 各弦の位置を計算（最初の弦の位置を基準に固定）
-        base_y = y
-        y_positions = [base_y - (i * self.style_manager.get("string_spacing")) for i in range(string_count)]
-        
-        # 小節を順に描画
-        current_x = self.margin
-        
-        for bar_index, bar in enumerate(bars):
-            # 小節内の総ステップ数を計算（パース時の値を使用）
-            total_steps = sum(note.step for note in bar.notes)
-            self.debug_print(f"  total_steps: {total_steps}")
-            
-            # 空の小節の場合はスキップ
-            if not bar.notes and not bar.is_dummy:
-                self.debug_print("  Skipping empty bar")
-                current_x += bar_width
-                continue
-            
-            # total_stepsが0の場合は最小値（1）を使用
-            if total_steps == 0 and not bar.is_dummy:
-                total_steps = 1
-                self.debug_print("  Warning: total_steps was 0, using minimum value of 1")
-            
-            # このステップ幅で描画（前後の余白を考慮）
-            # 繰り返し記号のためのマージンを追加（左右に2mm）
-            repeat_margin = 2.0 * mm if bar.is_repeat_start or bar.is_repeat_end else 0
-            usable_width = bar_width - (2 * bar_margin) - repeat_margin
-            step_width = usable_width / total_steps if total_steps > 0 else usable_width
-
-            # コードと三連符が重なる場合のYオフセット判定
-            has_chord = any(note.chord for note in bar.notes)
-            has_triplet = any(getattr(note, 'tuplet', None) == 3 for note in bar.notes)
-            y_offset = 0
-            if has_chord and has_triplet:
-                y_offset = 10  # 10pt ≒ 3.5mm だが、pt単位で10をそのまま使う（必要ならmm換算も可）
-
-            # 各弦の位置を計算（必要なら下げる）
-            y_positions = [base_y - (i * self.style_manager.get("string_spacing")) - y_offset for i in range(string_count)]
-            
-            # 縦線と横線を描画
-            # 繰り返し開始記号の描画
-            if bar.is_repeat_start:
-                # 太線を描画（太さを2.5mmに変更）
-                self.canvas.setLineWidth(self.style_manager.get("repeat_line_width"))
-                self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
-                self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))  # 線の太さを元に戻す
-                
-                # 細線を描画（太線の右側、間隔を1.2mmに変更）
-                self.canvas.line(current_x + self.style_manager.get("repeat_line_spacing"), y_positions[0], current_x + self.style_manager.get("repeat_line_spacing"), y_positions[-1])
-                
-                # ドットを描画（間隔をさらに広げる）
-                dot_y = (y_positions[0] + y_positions[-1]) / 2
-                dot_spacing = 6.0 * mm  # ドット間の間隔を6mmに設定（2倍に広げる）
-                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y + dot_spacing/2, self.style_manager.get("repeat_dot_size"), fill=1)
-                self.canvas.circle(current_x + self.style_manager.get("repeat_dot_offset"), dot_y - dot_spacing/2, self.style_manager.get("repeat_dot_size"), fill=1)
-                
-                # 音符の開始位置を右にずらす
-                note_x = current_x + bar_margin + repeat_margin
-            else:
-                # 通常の縦線
-                self.canvas.line(current_x, y_positions[0], current_x, y_positions[-1])
-                note_x = current_x + bar_margin
-            
-            # ボルタブラケット（n番カッコ）の描画
-            if bar.volta_number is not None:
-                # 1弦より上に描画するための位置調整（コードとの間隔を広げる）
-                bracket_y = y_positions[0] + self.style_manager.get("volta_bracket_offset")
-                
-                # 横線を描画（volta_startまたはvolta_endの時だけ）
-                if bar.volta_start or bar.volta_end:
-                    self.canvas.setLineWidth(self.style_manager.get("volta_line_width"))
-                    # 上線の左右端を小節境界からマージン分離す
-                    left_x = current_x + self.style_manager.get("volta_margin")
-                    right_x = current_x + bar_width - self.style_manager.get("volta_margin")
-                    self.canvas.line(left_x, bracket_y, right_x, bracket_y)
-                    self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
-                
-                # 左線と数字を描画（volta_startの時だけ）
-                if bar.volta_start:
-                    self.canvas.setLineWidth(self.style_manager.get("volta_line_width"))
-                    # 左線を小節頭よりマージン分右に、下端は1弦にかぶらないように
-                    left_x = current_x + self.style_manager.get("volta_margin")
-                    self.canvas.line(left_x, bracket_y, left_x, y_positions[0] + self.style_manager.get("string_bottom_margin"))
-                    self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
-                    
-                    # 数字を描画（ピリオド付き）
-                    self.canvas.setFont("Helvetica-Bold", 10)
-                    self.canvas.drawString(left_x + 2 * mm, bracket_y - self.style_manager.get("volta_number_offset"), f"{bar.volta_number}.")
-                
-                # 右線を描画（volta_endの時だけ）
-                if bar.volta_end:
-                    self.canvas.setLineWidth(self.style_manager.get("volta_line_width"))
-                    # 右線を小節終わりよりマージン分左に、下端は1弦にかぶらないように
-                    right_x = current_x + bar_width - self.style_manager.get("volta_margin")
-                    self.canvas.line(right_x, bracket_y, right_x, y_positions[0] + self.style_manager.get("string_bottom_margin"))
-                    self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
-            
-            # 横線を描画
-            for y in y_positions:
-                self.canvas.line(current_x, y, current_x + bar_width, y)
-            
-            # ダミー小節の場合は音符の描画をスキップ
-            if not bar.is_dummy:
-                # 音符を配置（開始マージンから開始）
-                last_chord = None  # 前回描画したコード名を記録
-                triplet_ranges = []  # 三連符グループの開始・終了X座標リスト
-                note_x_positions = []  # 各ノートのX座標
-                note_x = current_x + bar_margin
-                for note in bar.notes:
-                    note_x_positions.append(note_x)
-                    note_width = note.step * step_width
-                    note_x += note_width
-
-                # 三連符グループの範囲を検出（音価合計でグループ化）
-                i = 0
-                while i < len(bar.notes):
-                    tuplet_type = getattr(bar.notes[i], 'tuplet', None)
-                    if tuplet_type is not None:
-                        # 連符グループ開始
-                        start = i
-                        n = tuplet_type
-                        # 最大分母を取得
-                        denominators = [int(bar.notes[j].duration) for j in range(i, len(bar.notes)) if getattr(bar.notes[j], 'tuplet', None) == n and bar.notes[j].duration.isdigit()]
-                        if denominators:
-                            m = max(denominators)
-                        else:
-                            m = 8  # デフォルト
-                        expected = n / m
-                        actual = 0
-                        end = i
-                        while end < len(bar.notes) and getattr(bar.notes[end], 'tuplet', None) == n:
-                            if bar.notes[end].duration.isdigit():
-                                actual += 1 / int(bar.notes[end].duration)
-                            end += 1
-                            if abs(actual - expected) < 1e-6:
-                                break
-                        if abs(actual - expected) < 1e-6:
-                            # 範囲決定
-                            x1 = note_x_positions[start] + 1.5 * mm
-                            x2 = note_x_positions[end-1] + 1.5 * mm + self.canvas.stringWidth(str(bar.notes[end-1].fret), "Helvetica", 10)
-                            triplet_ranges.append((x1, x2, start, end-1))
-                            i = end
-                        else:
-                            i += 1
-                    else:
-                        i += 1
-
-                # 三連符記号を描画
-                for x1, x2, start, end in triplet_ranges:
-                    string_spacing = self.style_manager.get("string_spacing")
-                    y_triplet = y_positions[0] + self.style_manager.get("triplet_offset", 6 * mm) - string_spacing * 0.25
-
-                    # 3のテキストだけもう少し上に
-                    text_y_offset = - string_spacing * 0.1
-
-                    # 三連符の括弧の高さを設定
-                    bracket_height = self.style_manager.get("triplet_bracket_height", 2.5 * mm)
-                    
-                    # 上線
-                    self.canvas.line(x1, y_triplet, x2, y_triplet)
-                    
-                    # 左縦線（最初の音符の真上）
-                    self.canvas.line(x1, y_triplet, x1, y_triplet - bracket_height)
-                    
-                    # 右縦線（最後の音符の真上）
-                    self.canvas.line(x2, y_triplet, x2, y_triplet - bracket_height)
-                    
-                    # 3の数字（背景に白い四角を描画）
-                    self.canvas.setFont("Helvetica-Bold", 10)
-                    text = "3"
-                    text_width = self.canvas.stringWidth(text, "Helvetica-Bold", 10)
-                    text_height = 10
-                    mid_x = (x1 + x2) / 2
-                    
-                    # テキストの背景に白い四角を描画（位置を下げる）
-                    self.canvas.setFillColor('white')
-                    self.canvas.rect(mid_x - text_width/2 - 1, y_triplet - text_height/2 - 1 - text_y_offset, 
-                                   text_width + 2, text_height + 2, fill=1, stroke=0)
-                    
-                    # テキストを描画（位置を下げる）
-                    self.canvas.setFillColor('black')
-                    self.canvas.drawString(mid_x - text_width/2, y_triplet - text_height/2 - 1 - text_y_offset, text)
-
-                # 音符を描画（計算済みの位置を使用）
-                for i, note in enumerate(bar.notes):
-                    note_x = note_x_positions[i]
-                    note_width = note.step * step_width
-                    if note.chord and note.chord != last_chord:
-                        # コードはy_offsetを加えず、さらに弦間の5%分だけ上に描画
-                        string_spacing = self.style_manager.get("string_spacing")
-                        self._draw_chord(note_x, y_positions[0] + y_offset + string_spacing * 0.05, note.chord)
-                        last_chord = note.chord
-                    if not note.is_rest:
-                        if note.is_chord and getattr(note, 'is_chord_start', False):
-                            self._draw_chord_notes(note_x, y_positions, note)
-                        elif not note.is_chord:
-                            y = y_positions[note.string - 1]
-                            self._draw_fret_number(note_x, y, note.fret, note.connect_next)
-            else:
-                # ダミー小節の場合は「・/・」を画像のように描画
-                center_x = current_x + (bar_width / 2)
-                center_y = (y_positions[0] + y_positions[-1]) / 2
-
-                # 斜め線の長さと角度
-                slash_length = 12.0 * mm  # 長さを倍に
-                dx = (slash_length / 2) * 0.7071
-                dy = (slash_length / 2) * 0.7071
-
-                # 斜め線（長さ2倍・太さ1.5倍）
-                slash_width = 1.05 * mm
-                self.canvas.setLineWidth(slash_width)
-                self.canvas.line(
-                    center_x - dx, center_y - dy,
-                    center_x + dx, center_y + dy
-                )
-                self.canvas.setLineWidth(self.style_manager.get("normal_line_width"))
-
-                # ドット（6mm時のdx,dyを使う）
-                dot_base_length = 6.0 * mm
-                dot_dx = (dot_base_length / 2) * 0.7071
-                dot_dy = (dot_base_length / 2) * 0.7071
-                dot_radius = 0.7 * mm
-                dot_offset_x = dot_dx + 1.0 * mm
-                dot_offset_y = dot_dy + 0.7 * mm
-                self.canvas.circle(center_x - dot_offset_x, center_y + dot_offset_y, dot_radius, fill=1)
-                self.canvas.circle(center_x + dot_offset_x, center_y - dot_offset_y, dot_radius, fill=1)
-            
-            # 最後の縦線を描画
-            self.canvas.line(current_x + bar_width, y_positions[0], current_x + bar_width, y_positions[-1])
-            
-            # 次の小節の開始位置を更新
-            current_x += bar_width
-        
-        bar_group_margin_bottom = self.style_manager.get("bar_group_margin_bottom", 0)
-        return base_y - (string_count * self.style_manager.get("string_spacing")) - bar_group_margin_bottom
-
-    def _draw_slur(self, note_x, note, next_note, x2, y_positions):
-        """通常のスラーを描画"""
-        # スラーの開始位置を音符の中央に調整
-        x1 = note_x + 1.5 * mm
-        y1 = y_positions[note.string - 1] - 2 * mm
-        
-        # 終了位置を次の音符の中央に調整
-        # x2はすでに渡されているので再計算不要
-        y2 = y_positions[next_note.string - 1] - 2 * mm
-        
-        # 2本の曲線で描画（より自然な見た目に）
-        # 1本目（上側）
-        control_y1 = y1 - 3.2 * mm
-        control_y2 = y2 - 3.2 * mm
-        self.canvas.bezier(x1, y1,
-                          x1 + (x2 - x1) * 0.25, control_y1,
-                          x1 + (x2 - x1) * 0.75, control_y2,
-                          x2, y2)
-        
-        # 2本目（下側）
-        control_y1 = y1 - 2.8 * mm
-        control_y2 = y2 - 2.8 * mm
-        self.canvas.bezier(x1, y1,
-                          x1 + (x2 - x1) * 0.25, control_y1,
-                          x1 + (x2 - x1) * 0.75, control_y2,
-                          x2, y2)
-
-    def _draw_half_slur(self, note_x, note, x2, y_positions, half: str):
-        """スラーの左半分または右半分を描画"""
-        x1 = note_x + 1.5 * mm
-        y = y_positions[note.string - 1] - 2.0 * mm
-        
-        if half == "left":
-            # 左半分：始点から中央へ（2本の曲線）
-            control_y = y - 3.2 * mm
-            self.canvas.bezier(x1, y,
-                              x1 + (x2 - x1) * 0.3, control_y,  # 0.25から0.3に調整
-                              x1 + (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
-                              x2, control_y)
-            control_y = y - 2.8 * mm
-            self.canvas.bezier(x1, y,
-                              x1 + (x2 - x1) * 0.3, control_y,  # 0.25から0.3に調整
-                              x1 + (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
-                              x2, control_y)
-        else:
-            # 右半分：中央から終点へ（2本の曲線）
-            control_y = y - 4.0 * mm  # 4.3mmから4.0mmに調整
-            self.canvas.bezier(x1, control_y,
-                              x2 - (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
-                              x2 - (x2 - x1) * 0.3, y,          # 0.25から0.3に調整
-                              x2, y)
-            control_y = y - 3.5 * mm  # 3.7mmから3.5mmに調整
-            self.canvas.bezier(x1, control_y,
-                              x2 - (x2 - x1) * 0.6, control_y,  # 0.5から0.6に調整
-                              x2 - (x2 - x1) * 0.3, y,          # 0.25から0.3に調整
-                              x2, y) 
-
-    def _draw_chord_notes(self, note_x, y_positions, note):
-        """和音の音符を描画（ヘルパーメソッド）"""
-        # 主音を描画
-        y = y_positions[note.string - 1]
-        self.debug_print(f"Drawing chord main note: string={note.string}, fret={note.fret}, connect_next={note.connect_next}")
-        self._draw_fret_number(note_x, y, note.fret, note.connect_next)
-        
-        # 和音の他の音を描画
-        if hasattr(note, 'chord_notes') and note.chord_notes:
-            for chord_note in note.chord_notes:
-                y = y_positions[chord_note.string - 1]
-                self.debug_print(f"Drawing chord sub-note: string={chord_note.string}, fret={chord_note.fret}, connect_next={chord_note.connect_next}")
-                self._draw_fret_number(note_x, y, chord_note.fret, chord_note.connect_next) 
+    def _get_string_count(self) -> int:
+        """チューニング設定から弦の数を取得"""
+        tuning_map = {
+            "guitar": 6,
+            "guitar7": 7,
+            "bass": 4,
+            "bass5": 5,
+            "ukulele": 4
+        }
+        return tuning_map.get(self.score.tuning, 6)  # デフォルトは6弦 

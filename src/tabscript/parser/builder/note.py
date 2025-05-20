@@ -65,6 +65,10 @@ class NoteBuilder:
                 connect_next = True
                 duration = duration.rstrip('&')
             
+            # 音価が数字でない場合はエラー
+            if not duration.isdigit():
+                raise ParseError(f"休符の音価は数字である必要があります: {duration}", self.current_line)
+            
             note = Note(
                 string=self.last_string,  # 前回の弦番号を継承
                 fret="0",

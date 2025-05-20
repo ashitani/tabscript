@@ -40,6 +40,7 @@ class Bar:
     resolution: int = 16  # 分解能
     is_repeat_start: bool = False  # 繰り返し開始かどうか
     is_repeat_end: bool = False  # 繰り返し終了かどうか
+    repeat_number: Optional[int] = None  # 反復番号（1, 2など）
     volta_number: Optional[int] = None  # n番カッコの番号
     volta_start: bool = False  # n番カッコの開始かどうか
     volta_end: bool = False  # n番カッコの終了かどうか
@@ -67,6 +68,7 @@ class Section:
         self.columns = []
         self._bars = []  # 内部用の属性
         self.is_default = name == ""  # 名前が空文字列の場合はデフォルトセクション
+        self.bar_group_size = 4  # デフォルトの小節グループサイズ
     
     def get_all_bars(self) -> List[Bar]:
         """全ての小節を取得"""

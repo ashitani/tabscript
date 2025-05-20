@@ -1,7 +1,7 @@
 ---
 description: 
 globs: 
-alwaysApply: true
+alwaysApply: false
 ---
 # Project rule
 TabScriptは弦楽器演奏に用いるタブ譜を表現するための言語です。

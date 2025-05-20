@@ -169,14 +169,56 @@ class TestBarBuilder:
     def test_parse_bar_with_quintuplet_and_mixed(self):
         """五連符グループで音価・休符・ミュート混在のテスト"""
         builder = BarBuilder()
-        bar = builder.parse_bar_line("[ 1-1:4 2-2:8 r8 3-x:4 4-4:16 ]5")
+        # 16分音符5つで合計5/16（すべて通常の音符）
+        bar = builder.parse_bar_line("[ 1-1:16 2-2:16 3-3:16 4-4:16 5-5:16 ]5")
         assert len(bar.notes) == 5
         # それぞれの音符が正しくパースされていること
-        assert bar.notes[0].duration == "4"
-        assert bar.notes[1].duration == "8"
-        assert bar.notes[2].is_rest
-        assert bar.notes[3].fret.lower() == "x"
+        assert bar.notes[0].duration == "16"
+        assert bar.notes[1].duration == "16"
+        assert bar.notes[2].duration == "16"
+        assert bar.notes[3].duration == "16"
         assert bar.notes[4].duration == "16"
+
+    def test_parse_bar_with_quintuplet_rests(self):
+        """五連符グループで休符のみのテスト"""
+        builder = BarBuilder()
+        # 16分休符5つで合計5/16
+        bar = builder.parse_bar_line("[ r16 r16 r16 r16 r16 ]5")
+        assert len(bar.notes) == 5
+        # すべて休符であることを確認
+        for note in bar.notes:
+            assert note.is_rest
+            assert note.duration == "16"
+
+    def test_parse_bar_with_quintuplet_mutes(self):
+        """五連符グループでミュートのみのテスト"""
+        builder = BarBuilder()
+        # 16分ミュート5つで合計5/16
+        bar = builder.parse_bar_line("[ 1-x:16 2-x:16 3-x:16 4-x:16 5-x:16 ]5")
+        assert len(bar.notes) == 5
+        # すべてミュートであることを確認
+        for note in bar.notes:
+            assert note.fret.lower() == "x"
+            assert note.duration == "16"
+
+    def test_parse_bar_with_quintuplet_mixed_types(self):
+        """五連符グループで休符・ミュート・通常音符が混在するテスト"""
+        builder = BarBuilder()
+        # 16分音符5つで合計5/16（休符・ミュート・通常音符の混在）
+        bar = builder.parse_bar_line("[ 1-1:16 r16 3-x:16 4-4:16 5-5:16 ]5")
+        assert len(bar.notes) == 5
+        # それぞれの音符が正しくパースされていること
+        assert bar.notes[0].duration == "16"
+        assert bar.notes[0].string == 1
+        assert bar.notes[0].fret == "1"
+        assert bar.notes[1].is_rest
+        assert bar.notes[1].duration == "16"
+        assert bar.notes[2].fret.lower() == "x"
+        assert bar.notes[2].duration == "16"
+        assert bar.notes[3].duration == "16"
+        assert bar.notes[3].string == 4
+        assert bar.notes[4].duration == "16"
+        assert bar.notes[4].string == 5
 
     def test_triplet_tuplet_flag_and_step(self):
         """三連符グループのtuplet属性と絶対音価(step)の検証"""
