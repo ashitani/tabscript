@@ -206,13 +206,15 @@ class BarBuilder:
         self.debug_print(f"[DEBUG] tokens after split: {tokens}")
         # コード名と音価の初期設定
         current_chord = None
-        current_duration = "4"  # デフォルトは4分音符
+        current_duration = "4"
+        chord_just_set = False  # コードが設定された直後かどうかを示すフラグ
         
         # 各トークンを解析
         for token in tokens:
             # コード名の処理
             if token.startswith('@'):
                 current_chord = token[1:]  # @を除去してコード名を抽出
+                chord_just_set = True  # コードが設定されたことを記録
                 continue
             
             try:
@@ -232,6 +234,7 @@ class BarBuilder:
                         tuplet_duration = parts[1] if len(parts) > 1 else "4"
                     else:
                         tuplet_duration = "4"
+                    is_first_note = True
                     for note_token in tuplet_tokens:
                         # 休符トークンがrで始まり:を含まない場合、r:XXの形に変換
                         if note_token.startswith('r') and ':' not in note_token and len(note_token) > 1:
@@ -240,28 +243,19 @@ class BarBuilder:
                         self.debug_print(f"分割: note_token={note_token}, split_result={split_result}")
                         duration_for_note = split_result[1] if len(split_result) > 1 else tuplet_duration
                         self.debug_print(f"連符: note_token={note_token}, duration_for_note={duration_for_note}")
-                        note = self.note_builder.parse_note(note_token, duration_for_note, current_chord)
+                        is_start = is_first_note and chord_just_set
+                        note = self.note_builder.parse_note(note_token, duration_for_note, current_chord, is_chord_start=is_start)
                         note.tuplet = tuplet_type
                         tuplet_notes.append(note)
-                    # 音価合計で判定
-                    # 連符の基準音価m（最大分母）
-                    if tuplet_notes:
-                        base_duration = max(int(n.duration) for n in tuplet_notes if n.duration.isdigit())
-                    else:
-                        base_duration = 8  # デフォルト
-                    n = tuplet_type
-                    m = base_duration
-                    expected = Fraction(n, m)  # 例: 3連符なら3/8
-                    # 休符も含めて音価を計算
-                    actual = sum(Fraction(1, int(n.duration)) for n in tuplet_notes)
-                    if actual != expected:
-                        raise ParseError(f"{tuplet_type}連符の音価合計が正しくありません (合計: {actual}, 期待: {expected})", self.current_line)
+                        is_first_note = False
+                    chord_just_set = False  # コード設定フラグをリセット
                     notes.extend(tuplet_notes)
                     continue
                 
                 # 和音表記の場合
                 if token.startswith('(') and ')' in token:
-                    chord_note = self.note_builder.parse_chord_notation(token, current_duration, current_chord)
+                    chord_note = self.note_builder.parse_chord_notation(token, current_duration, current_chord, is_chord_start=chord_just_set)
+                    chord_just_set = False  # コード設定フラグをリセット
                     
                     # 音価を更新（次の音符のデフォルト値として）
                     if hasattr(chord_note, 'duration') and chord_note.duration:
@@ -271,7 +265,8 @@ class BarBuilder:
                     notes.append(chord_note)
                 else:
                     # 通常の音符の処理
-                    note = self.note_builder.parse_note(token, current_duration, current_chord)
+                    note = self.note_builder.parse_note(token, current_duration, current_chord, is_chord_start=chord_just_set)
+                    chord_just_set = False  # コード設定フラグをリセット
                     
                     # 音価を更新（次の音符のデフォルト値として）
                     if hasattr(note, 'duration') and note.duration:

@@ -590,15 +590,18 @@ class Renderer:
                     
                     # コードを描画（中段）
                     if bar.notes:
-                        # 最初の非休符音符を探す
-                        first_non_rest_note = next((note for note in bar.notes if not note.is_rest), None)
-                        if first_non_rest_note and first_non_rest_note.chord:
-                            self.bar_renderer._draw_chord(
-                                canvas_obj,
-                                note_positions[0],  # 最初の音符の位置を使用
-                                chord_y,
-                                first_non_rest_note.chord
-                            )
+                        self.debug_print(f"Checking notes in bar for chords:")
+                        # 各音符のコードを描画（明示的に指定されたコードのみ）
+                        for i, note in enumerate(bar.notes):
+                            self.debug_print(f"Note {i}: is_rest={note.is_rest}, chord={note.chord}, is_chord_start={getattr(note, 'is_chord_start', False)}")
+                            if not note.is_rest and note.chord and getattr(note, 'is_chord_start', False):
+                                self.debug_print(f"Drawing chord '{note.chord}' at position {note_positions[i]}")
+                                self.bar_renderer._draw_chord(
+                                    canvas_obj,
+                                    note_positions[i],  # 現在の音符の位置を使用
+                                    chord_y,
+                                    note.chord
+                                )
 
                     # 三連符記号を描画（下段）
                     triplet_ranges = self.bar_renderer.triplet_renderer.detect_triplet_ranges(bar, note_positions, canvas_obj)

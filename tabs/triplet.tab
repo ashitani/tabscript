@@ -13,4 +13,4 @@ $section="Without Code, Without Triplet"
 4-2 4-4 3-2 4-2
 
 $section="With Code, Without Triplet"
-@F#m 4-2 4-4 @F#m/A 3-2 4-2
+@F#m 4-2 @F#m r-4 @F#m/A 3-2 4-2

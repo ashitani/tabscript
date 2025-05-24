@@ -32,13 +32,14 @@ class NoteBuilder:
         """
         self.tuning = tuning
     
-    def parse_note(self, token: str, default_duration: str = None, chord: Optional[str] = None) -> Note:
+    def parse_note(self, token: str, default_duration: str = None, chord: Optional[str] = None, is_chord_start: bool = False) -> Note:
         """音符トークンをパースしてNoteオブジェクトを返す
         
         Args:
             token: パースする音符トークン（例：3-5:8）
             default_duration: デフォルトの音価
             chord: コード名
+            is_chord_start: コード開始フラグ
             
         Returns:
             Note: パースされた音符オブジェクト
@@ -69,20 +70,23 @@ class NoteBuilder:
             if not duration.isdigit():
                 raise ParseError(f"休符の音価は数字である必要があります: {duration}", self.current_line)
             
+            self.debug_print(f"Creating rest note with is_chord_start={is_chord_start}")
             note = Note(
                 string=self.last_string,  # 前回の弦番号を継承
                 fret="0",
                 duration=duration,
                 is_rest=True,
-                connect_next=connect_next
+                connect_next=connect_next,
+                is_chord_start=is_chord_start
             )
             
             self.last_duration = duration
+            self.debug_print(f"Created rest note: duration={duration}, is_chord_start={note.is_chord_start}")
             return note
         
         # 和音の処理
         if token.startswith('('):
-            return self.parse_chord_notation(token, default_duration, chord)
+            return self.parse_chord_notation(token, default_duration, chord, is_chord_start)
         
         # 弦移動の処理
         if token.startswith('u') or token.startswith('d'):
@@ -124,6 +128,7 @@ class NoteBuilder:
             if new_string > max_string:
                 raise ParseError(f"cannot move beyond string {max_string}", self.current_line)
             
+            self.debug_print(f"Creating string movement note with is_chord_start={is_chord_start}")
             note = Note(
                 string=new_string,
                 fret=fret_str,
@@ -131,11 +136,13 @@ class NoteBuilder:
                 is_up_move=is_up,
                 is_down_move=not is_up,
                 connect_next=connect_next,
-                chord=chord
+                chord=chord,
+                is_chord_start=is_chord_start
             )
             
             self.last_string = new_string
             self.last_duration = duration
+            self.debug_print(f"Created string movement note: string={new_string}, fret={fret_str}, duration={duration}, is_chord_start={note.is_chord_start}")
             
             return note
         
@@ -177,23 +184,27 @@ class NoteBuilder:
         # デバッグ出力を追加して、&が正しく除去されていることを確認
         self.debug_print(f"After parsing: string={string_num}, fret={fret_str}, duration={duration}, connect_next={connect_next}")
         
+        self.debug_print(f"Creating regular note with is_chord_start={is_chord_start}")
         note = Note(
             string=string_num,
             fret=fret_str,
             duration=duration,
             is_muted=is_muted,
             connect_next=connect_next,
-            chord=chord
+            chord=chord,
+            is_chord_start=is_chord_start
         )
+        
+        self.debug_print(f"Created note: string={string_num}, fret={fret_str}, duration={duration}, is_chord_start={note.is_chord_start}")
         
         self.last_string = string_num
         self.last_duration = duration
         
         return note
     
-    def parse_chord_notation(self, token: str, default_duration: str = None, chord: Optional[str] = None) -> Note:
+    def parse_chord_notation(self, token: str, default_duration: str = None, chord: Optional[str] = None, is_chord_start: bool = False) -> Note:
         """和音表記（括弧で囲まれた複数の音符）をパースする"""
-        self.debug_print(f"parse_chord_notation: token='{token}', default_duration='{default_duration}', chord='{chord}'")
+        self.debug_print(f"parse_chord_notation: token='{token}', default_duration='{default_duration}', chord='{chord}', is_chord_start={is_chord_start}")
         
         # 括弧と音価の分離
         if token.startswith('(') and ')' in token:
@@ -225,19 +236,21 @@ class NoteBuilder:
             self.debug_print(f"Chord content: {content_part}, notes_tokens: {notes_tokens}, duration: {duration}")
             
             # 最初の音符を主音として処理
-            main_note = self.parse_note(notes_tokens[0], duration, chord)
+            main_note = self.parse_note(notes_tokens[0], duration, chord, is_chord_start=is_chord_start)
             
             # 和音フラグと接続フラグの設定
             main_note.is_chord = True
-            main_note.is_chord_start = True
+            main_note.is_chord_start = is_chord_start
             main_note.chord_notes = []  # 明示的に初期化
             
             if connect_next:
                 main_note.connect_next = True
             
+            self.debug_print(f"Created chord note: string={main_note.string}, fret={main_note.fret}, duration={duration}, is_chord_start={main_note.is_chord_start}")
+            
             # 残りの音符を和音の構成音として追加
             for note_token in notes_tokens[1:]:
-                chord_note = self.parse_note(note_token, duration, chord)
+                chord_note = self.parse_note(note_token, duration, chord, is_chord_start=False)  # 明示的にFalseを設定
                 chord_note.is_chord = True
                 if connect_next:
                     chord_note.connect_next = True
@@ -310,39 +323,84 @@ class NoteBuilder:
         bar = Bar(notes=[])
         
         # 小節行をトークンに分割
+        # コード名の直後にスペースがなければ補う（和音や連符の前も含めて）
+        line = re.sub(r'(@[A-Za-z0-9#\-/]+)(?=[(\[]|\S)', r'\1 ', line)
         tokens = re.findall(r'\S+', line)
+        self.debug_print(f"[TOKENS] {tokens}")
         
         # コード名と音価の初期設定
         current_chord = None
         current_duration = "4"  # デフォルトは4分音符
+        chord_just_set = False  # コードがセットされた直後かどうか
         
         # 各トークンを解析
         for token in tokens:
+            self.debug_print(f"[LOOP HEAD] token='{token}', chord_just_set={chord_just_set}, current_chord={current_chord}")
             # コード名の処理
             if token.startswith('@'):
-                current_chord = token[1:]  # @を除去してコード名を抽出
+                current_chord = token[1:]
+                chord_just_set = True
+                self.debug_print(f"[DEBUG] chord_just_setをTrueにセット: token={token}, current_chord={current_chord}")
                 continue
             
             try:
+                # 連符グループの処理
+                if token.startswith('[tuplet:'):
+                    self.debug_print(f"[DEBUG] 連符グループ処理直前: chord_just_set={chord_just_set}, token={token}")
+                    m = re.match(r'\[tuplet:(\d+)\](.*)', token)
+                    if not m:
+                        raise ParseError("連符グループのパースに失敗しました", self.current_line)
+                    tuplet_type = int(m.group(1))
+                    tuplet_content = m.group(2)
+                    tuplet_notes = []
+                    tuplet_tokens = tuplet_content.split()
+                    if tuplet_tokens:
+                        parts = tuplet_tokens[0].split(':', 1)
+                        tuplet_duration = parts[1] if len(parts) > 1 else "4"
+                    else:
+                        tuplet_duration = "4"
+                    # chord_just_setを一時変数に退避
+                    consume_chord_just_set = chord_just_set
+                    chord_just_set = False
+                    is_first_note = True
+                    for note_token in tuplet_tokens:
+                        if note_token.startswith('r') and ':' not in note_token and len(note_token) > 1:
+                            note_token = f"r:{note_token[1:]}"
+                        split_result = note_token.split(':', 1)
+                        duration_for_note = split_result[1] if len(split_result) > 1 else tuplet_duration
+                        is_start = is_first_note and consume_chord_just_set
+                        if is_start:
+                            self.debug_print(f"[DEBUG] 連符: is_chord_start=True で note_token={note_token} をparse_noteに渡す (consume_chord_just_set={consume_chord_just_set})")
+                        note = self.parse_note(note_token, duration_for_note, current_chord, is_chord_start=is_start)
+                        note.tuplet = tuplet_type
+                        tuplet_notes.append(note)
+                        is_first_note = False
+                    bar.notes.extend(tuplet_notes)
+                    continue
+                
                 # 和音表記の場合
                 if token.startswith('(') and ')' in token:
-                    chord_note = self.parse_chord_notation(token, current_duration, current_chord)
-                    # 音価を更新（次の音符のデフォルト値として）
+                    consume_chord_just_set = chord_just_set
+                    chord_just_set = False
+                    if consume_chord_just_set:
+                        self.debug_print(f"[DEBUG] 和音: is_chord_start=True で token={token} をparse_chord_notationに渡す")
+                    chord_note = self.parse_chord_notation(token, current_duration, current_chord, is_chord_start=consume_chord_just_set)
                     if chord_note.duration:
                         current_duration = chord_note.duration
-                    
-                    # 和音をバーに追加
                     bar.notes.append(chord_note)
                     continue
                 
                 # 通常の音符の処理
-                note = self.parse_note(token, current_duration, current_chord)
-                
-                # 音価を更新（次の音符のデフォルト値として）
+                consume_chord_just_set = chord_just_set
+                chord_just_set = False
+                if consume_chord_just_set:
+                    self.debug_print(f"[DEBUG] 通常音符: is_chord_start=True で token={token} をparse_noteに渡す")
+                    note = self.parse_note(token, current_duration, current_chord, is_chord_start=True)
+                else:
+                    note = self.parse_note(token, current_duration, current_chord, is_chord_start=False)
+                self.debug_print(f"parse_bar_line: set is_chord_start={note.is_chord_start} for note string={note.string}, fret={note.fret}, chord={note.chord}")
                 if note.duration:
                     current_duration = note.duration
-                
-                # 音符をバーに追加
                 bar.notes.append(note)
             except Exception as e:
                 self.debug_print(f"Error parsing token '{token}': {str(e)}")
