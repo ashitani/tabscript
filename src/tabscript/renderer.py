@@ -431,8 +431,17 @@ class LayoutCalculator:
         return positions
 
     def calculate_string_positions(self, y: float) -> list:
+        """弦の位置を計算
+        
+        Args:
+            y: 開始Y座標
+            
+        Returns:
+            各弦のY座標のリスト
+        """
         string_spacing = self.style_manager.get("string_spacing")
-        return [y - (i * string_spacing) for i in range(6)]
+        string_count = self.style_manager.get("string_count", 6)  # デフォルトは6弦
+        return [y - (i * string_spacing) for i in range(string_count)]
 
 class Renderer:
     def __init__(self, score: Score, debug_mode: bool = False, style_file=None):
@@ -465,6 +474,11 @@ class Renderer:
     def render_pdf(self, output_path: str):
         """タブ譜をPDFとしてレンダリング"""
         self.debug_print(f"render_pdf start: score object id = {id(self.score)}")
+        
+        # 弦の数を設定
+        string_count = self._get_string_count()
+        self.style_manager.set("string_count", string_count)
+        self.debug_print(f"String count: {string_count}")
         
         # A4縦向きでキャンバスを作成
         canvas_obj = canvas.Canvas(output_path, pagesize=A4)
@@ -524,9 +538,11 @@ class Renderer:
                             has_triplet = True
                             break
                     
-                    # コードのチェック
-                    if bar.notes and bar.notes[0].chord:
-                        has_chord = True
+                    # コードのチェック（小節内の最初の非休符音符を探す）
+                    if bar.notes:
+                        first_non_rest_note = next((note for note in bar.notes if not note.is_rest), None)
+                        if first_non_rest_note and first_non_rest_note.chord:
+                            has_chord = True
                     
                     # ボルタのチェック
                     if bar.volta_number is not None:
@@ -572,21 +588,22 @@ class Renderer:
                             canvas_obj, bar, bar_positions[j], bar_width, y_positions, volta_y
                         )
                     
-                    
                     # コードを描画（中段）
-                    if bar.notes and bar.notes[0].chord:
-                        self.bar_renderer._draw_chord(
-                            canvas_obj,
-                            note_positions[0],  # 最初の音符の位置を使用
-                            chord_y,
-                            bar.notes[0].chord
-                        )
+                    if bar.notes:
+                        # 最初の非休符音符を探す
+                        first_non_rest_note = next((note for note in bar.notes if not note.is_rest), None)
+                        if first_non_rest_note and first_non_rest_note.chord:
+                            self.bar_renderer._draw_chord(
+                                canvas_obj,
+                                note_positions[0],  # 最初の音符の位置を使用
+                                chord_y,
+                                first_non_rest_note.chord
+                            )
 
                     # 三連符記号を描画（下段）
                     triplet_ranges = self.bar_renderer.triplet_renderer.detect_triplet_ranges(bar, note_positions, canvas_obj)
                     if triplet_ranges:
                         self.bar_renderer.triplet_renderer.draw_triplet_marks(canvas_obj, triplet_ranges, y_positions, triplet_y)
-
 
                     # 小節と音符を描画
                     self.bar_renderer.render_bar(
