@@ -594,7 +594,7 @@ class Renderer:
                         # 各音符のコードを描画（明示的に指定されたコードのみ）
                         for i, note in enumerate(bar.notes):
                             self.debug_print(f"Note {i}: is_rest={note.is_rest}, chord={note.chord}, is_chord_start={getattr(note, 'is_chord_start', False)}")
-                            if not note.is_rest and note.chord and getattr(note, 'is_chord_start', False):
+                            if note.chord and getattr(note, 'is_chord_start', False):
                                 self.debug_print(f"Drawing chord '{note.chord}' at position {note_positions[i]}")
                                 self.bar_renderer._draw_chord(
                                     canvas_obj,
