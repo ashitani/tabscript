@@ -46,9 +46,11 @@ class ScoreBuilder:
             beat=settings.get('beat', '4/4'),
             bars_per_line=int(settings.get('bars_per_line', 4))
         )
+        self.debug_print(f"Initial bars_per_line: {score.bars_per_line}")
         
         # 各セクションのバーを作成
-        current_beat = score.beat  # 現在の拍子を追跡（スコアのデフォルト値で初期化）
+        current_beat = score.beat
+        current_bars_per_line = score.bars_per_line
         
         # section_bar_infosの形式を検出して適切に処理
         if isinstance(section_bar_infos, list):
@@ -57,6 +59,10 @@ class ScoreBuilder:
                 section_name = section_info.get('name', '')
                 bar_infos = section_info.get('bars', [])
                 
+                # セクションごとのbars_per_lineを取得
+                section_bars_per_line = section_info.get('bars_per_line', current_bars_per_line)
+                self.debug_print(f"Section {section_name} using bars_per_line: {section_bars_per_line}")
+                
                 section = Section(section_name)
                 score.sections.append(section)
                 
@@ -69,12 +75,17 @@ class ScoreBuilder:
                     if bar.beat != current_beat:
                         current_beat = bar.beat
                 # 小節リストをbars_per_line単位でColumnに分割
-                self._organize_bars_into_columns(section, bars, score.bars_per_line, current_beat)
+                self.debug_print(f"Organizing bars for section {section_name} with bars_per_line={section_bars_per_line}")
+                self._organize_bars_into_columns(section, bars, section_bars_per_line, current_beat)
                 # 追加: Sectionの_bars属性に全小節をセット
                 section._bars = bars
         else:
             # 辞書形式 {"Section A": [...], ...}
             for section_name, bar_infos in section_bar_infos.items():
+                # セクションごとのbars_per_lineを取得
+                section_bars_per_line = bar_infos.get('bars_per_line', current_bars_per_line)
+                self.debug_print(f"Section {section_name} using bars_per_line: {section_bars_per_line}")
+                
                 section = Section(section_name)
                 score.sections.append(section)
                 
@@ -87,7 +98,8 @@ class ScoreBuilder:
                     if bar.beat != current_beat:
                         current_beat = bar.beat
                 # 小節リストをbars_per_line単位でColumnに分割
-                self._organize_bars_into_columns(section, bars, score.bars_per_line, current_beat)
+                self.debug_print(f"Organizing bars for section {section_name} with bars_per_line={section_bars_per_line}")
+                self._organize_bars_into_columns(section, bars, section_bars_per_line, current_beat)
                 # 追加: Sectionの_bars属性に全小節をセット
                 section._bars = bars
         

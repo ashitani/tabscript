@@ -331,6 +331,10 @@ class Parser:
                 bars_per_line = int(value)
                 # 各セクションのカラムに設定するため、ここでは保存のみ
                 self.bars_per_line = bars_per_line
+                self.debug_print(f"Updated bars_per_line to: {bars_per_line}")
+                # スコアのbars_per_lineも更新
+                self.score.bars_per_line = bars_per_line
+                self.debug_print(f"Updated score.bars_per_line to: {self.score.bars_per_line}")
             except ValueError:
                 raise ParseError(f"Invalid bars_per_line value: {value}", self.current_line)
         else:

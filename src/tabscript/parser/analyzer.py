@@ -162,6 +162,7 @@ class StructureAnalyzer:
         sections = []
         current_section = None
         current_content = []
+        current_bars_per_line = 4  # デフォルト値
         
         # 行ごとに処理
         for line in text.split('\n'):
@@ -181,13 +182,18 @@ class StructureAnalyzer:
                         sections.append(current_section)
                         current_content = []
                     # 新しいセクションを開始
-                    current_section = {"name": value, "bars": []}
+                    current_section = {"name": value, "bars": [], "bars_per_line": current_bars_per_line}
+                # bars_per_lineの更新
+                elif key == 'bars_per_line':
+                    current_bars_per_line = int(value)
+                    if current_section is not None:
+                        current_section["bars_per_line"] = current_bars_per_line
                 continue
                 
             # 通常の行（小節）の処理
             if current_section is None:
                 # $section=が現れる前の小節はデフォルトセクションとして扱う
-                current_section = {"name": "", "bars": []}
+                current_section = {"name": "", "bars": [], "bars_per_line": current_bars_per_line}
             
             # 分割せず、そのままcurrent_contentに追加
             current_content.append(line)

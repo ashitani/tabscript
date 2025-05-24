@@ -481,7 +481,6 @@ class Renderer:
         y -= 5 * mm
         
         # セクションごとに描画
-        bars_per_line = self.score.bars_per_line
         for section in self.score.sections:
             self.debug_print(f"Processing section: {section.name}")
             
@@ -493,6 +492,8 @@ class Renderer:
             
             # 各行を描画
             for i, column in enumerate(section.columns):
+                bars_per_line = getattr(column, 'bars_per_line', self.score.bars_per_line)
+                self.debug_print(f"Section: {section.name}, Column: {i}, bars_per_line: {bars_per_line}")
                 # 改行後の初期位置
                 if i == 0:  # 最初のカラム
                     # セクション名の下の位置を維持
@@ -505,6 +506,7 @@ class Renderer:
                 bar_width, bar_group_width, bar_group_margin = self.layout_calculator.calculate_section_layout(
                     bars_per_line, self.page_width - (2 * self.margin)
                 )
+                self.debug_print(f"Section: {section.name}, Column: {i}, Bar width: {bar_width}, Bar group width: {bar_group_width}")
                 bar_positions = self.layout_calculator.calculate_bar_positions(
                     bars_per_line, self.margin, bar_width, bar_group_width, bar_group_margin
                 )
