@@ -538,10 +538,10 @@ class Renderer:
                             has_triplet = True
                             break
                     
-                    # コードのチェック（小節内の最初の非休符音符を探す）
+                    # コードのチェック（小節内の最初の音符を探す）
                     if bar.notes:
-                        first_non_rest_note = next((note for note in bar.notes if not note.is_rest), None)
-                        if first_non_rest_note and first_non_rest_note.chord:
+                        first_note = bar.notes[0]
+                        if first_note.chord:
                             has_chord = True
                     
                     # ボルタのチェック
