@@ -77,11 +77,12 @@ class NoteBuilder:
                 duration=duration,
                 is_rest=True,
                 connect_next=connect_next,
-                is_chord_start=is_chord_start
+                is_chord_start=is_chord_start,
+                chord=chord  # コードを設定
             )
             
             self.last_duration = duration
-            self.debug_print(f"Created rest note: duration={duration}, is_chord_start={note.is_chord_start}")
+            self.debug_print(f"Created rest note: duration={duration}, is_chord_start={note.is_chord_start}, chord={note.chord}")
             return note
         
         # 和音の処理
