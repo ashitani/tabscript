@@ -237,11 +237,11 @@ class NoteBuilder:
             self.debug_print(f"Chord content: {content_part}, notes_tokens: {notes_tokens}, duration: {duration}")
             
             # 最初の音符を主音として処理
-            main_note = self.parse_note(notes_tokens[0], duration, chord, is_chord_start=is_chord_start)
+            main_note = self.parse_note(notes_tokens[0], duration, chord, is_chord_start=True)  # 常にTrueに設定
             
             # 和音フラグと接続フラグの設定
             main_note.is_chord = True
-            main_note.is_chord_start = is_chord_start
+            main_note.is_chord_start = True  # 常にTrueに設定
             main_note.chord_notes = []  # 明示的に初期化
             
             if connect_next:
@@ -385,7 +385,7 @@ class NoteBuilder:
                     chord_just_set = False
                     if consume_chord_just_set:
                         self.debug_print(f"[DEBUG] 和音: is_chord_start=True で token={token} をparse_chord_notationに渡す")
-                    chord_note = self.parse_chord_notation(token, current_duration, current_chord, is_chord_start=consume_chord_just_set)
+                    chord_note = self.parse_chord_notation(token, current_duration, current_chord, is_chord_start=True)
                     if chord_note.duration:
                         current_duration = chord_note.duration
                     bar.notes.append(chord_note)
