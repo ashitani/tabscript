@@ -483,6 +483,9 @@ class Renderer:
         # A4縦向きでキャンバスを作成
         canvas_obj = canvas.Canvas(output_path, pagesize=A4)
         
+        # 現在のページ番号を初期化
+        current_page = 1
+        
         # 1. タイトルを描画
         y = self.page_height - self.margin
         self._draw_title(canvas_obj, y)
@@ -495,7 +498,7 @@ class Renderer:
         y -= 5 * mm
         
         # セクションごとに描画
-        for section in self.score.sections:
+        for section_index, section in enumerate(self.score.sections):
             self.debug_print(f"Processing section: {section.name}")
             self.debug_print(f"Section attributes: {dir(section)}")
             self.debug_print(f"Section page_breaks: {getattr(section, 'page_breaks', None)}")
@@ -626,7 +629,10 @@ class Renderer:
                 if hasattr(section, 'page_breaks') and current_bar_count in section.page_breaks:
                     self.debug_print(f"Section: {section.name}, Current bar count: {current_bar_count}, page_breaks: {section.page_breaks}")
                     self.debug_print(f"Should break page: {current_bar_count in section.page_breaks}")
+                    # 現在のページのページ番号を描画
+                    self._draw_page_number(canvas_obj, current_page)
                     canvas_obj.showPage()
+                    current_page += 1
                     # 新しいページでは最小限の余白から描画を始める
                     y = self.page_height - (self.margin - self.style_manager.get("section_name_margin_bottom"))
                     # 三連符、コード、ボルタの位置も上端に合わせる
@@ -640,12 +646,17 @@ class Renderer:
             # セクション間の間隔
             y -= self.style_manager.get("section_spacing")
             
-            # 新しいページが必要かチェック
-            if y < self.margin_bottom:
+            # 新しいページが必要かチェック（最後のセクションでない場合のみ）
+            if y < self.margin_bottom and section_index < len(self.score.sections) - 1:
+                # 現在のページのページ番号を描画
+                self._draw_page_number(canvas_obj, current_page)
                 canvas_obj.showPage()
+                current_page += 1
                 # 新しいページでは必ず上端から描画を始める
                 y = self.page_height - self.margin
         
+        # 最後のページのページ番号を描画
+        self._draw_page_number(canvas_obj, current_page)
         canvas_obj.save()
 
     def _draw_title(self, canvas_obj, y: float):
@@ -767,3 +778,17 @@ class Renderer:
             "ukulele": 4
         }
         return tuning_map.get(self.score.tuning, 6)  # デフォルトは6弦 
+
+    def _draw_page_number(self, canvas_obj, current_page: int):
+        """ページ番号を描画
+        
+        Args:
+            canvas_obj: 描画対象のキャンバス
+            current_page: 現在のページ番号
+        """
+        canvas_obj.setFont("Helvetica", 8)  # 小さいフォントサイズ
+        page_text = f"{self.score.title} {current_page}"
+        text_width = canvas_obj.stringWidth(page_text, "Helvetica", 8)
+        x = self.page_width - 10 * mm - text_width  # 右端から10mmの位置から文字列の幅を引く
+        y = self.page_height - 10 * mm  # 上端から10mmの位置
+        canvas_obj.drawString(x, y, page_text) 
