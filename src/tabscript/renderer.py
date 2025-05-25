@@ -30,12 +30,34 @@ class NoteRenderer:
         canvas.setFont("Helvetica", 10)
         fret_str = "X" if fret == "X" else str(fret)
         
-        text_width = canvas.stringWidth(fret_str, "Helvetica", 10)
-        text_height = 10
-        canvas.setFillColor('white')
-        canvas.rect(x + 1 * mm, y - text_height/2, text_width + 1, text_height, fill=1, stroke=0)
-        canvas.setFillColor('black')
-        canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
+        # 二桁の数字の場合、文字間隔を詰める
+        if len(fret_str) > 1 and fret_str.isdigit():
+            # 各桁の文字を個別に描画
+            text_height = 10
+            canvas.setFillColor('white')
+            # 背景を少し広めに取る
+            text_width = canvas.stringWidth(fret_str, "Helvetica", 10) * 0.8  # 20%縮小
+            canvas.rect(x + 1 * mm, y - text_height/2, text_width + 1, text_height, fill=1, stroke=0)
+            canvas.setFillColor('black')
+            
+            # 各桁を個別に描画（間隔を詰める）
+            first_digit = fret_str[0]
+            second_digit = fret_str[1]
+            first_width = canvas.stringWidth(first_digit, "Helvetica", 10)
+            second_width = canvas.stringWidth(second_digit, "Helvetica", 10)
+            
+            # 最初の桁を描画
+            canvas.drawString(x + 1 * mm, y - text_height/3, first_digit)
+            # 2桁目の位置を調整（間隔を詰める）
+            canvas.drawString(x + 1 * mm + first_width * 0.7, y - text_height/3, second_digit)
+        else:
+            # 一桁の数字やXの場合は通常通り描画
+            text_width = canvas.stringWidth(fret_str, "Helvetica", 10)
+            text_height = 10
+            canvas.setFillColor('white')
+            canvas.rect(x + 1 * mm, y - text_height/2, text_width + 1, text_height, fill=1, stroke=0)
+            canvas.setFillColor('black')
+            canvas.drawString(x + 1 * mm, y - text_height/3, fret_str)
 
     def _draw_tie(self, canvas, x1: float, y1: float, x2: float, y2: float, is_quarter_circle: bool = False):
         """タイ・スラーを描画
