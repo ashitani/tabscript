@@ -26,6 +26,8 @@ def main():
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     parser.add_argument('--debug-level', type=int, choices=[1, 2, 3], default=1, 
                         help='Debug level (1: basic, 2: detailed, 3: verbose)')
+    parser.add_argument('--show-length', action='store_true',
+                        help='Show note lengths and tuplets (default: False)')
     args = parser.parse_args()
     
     # 出力形式の判断
@@ -46,7 +48,7 @@ def main():
             
             # レンダラーの初期化とレンダリング
             if is_pdf:
-                renderer = Renderer(score, debug_mode=args.debug)
+                renderer = Renderer(score, debug_mode=args.debug, show_length=args.show_length)
                 renderer.render_pdf(output_file)
             else:
                 # テキスト出力の場合の処理（未実装）

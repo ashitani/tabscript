@@ -38,6 +38,11 @@ pip install .
 # PDFとして出力
 tab2pdf score.tab
 tab2pdf tabs/*.tab   # 複数ファイルの一括処理
+
+# オプション
+tab2pdf --debug score.tab  # デバッグ出力を有効化
+tab2pdf --debug-level 2 score.tab  # デバッグレベルを指定（1: basic, 2: detailed, 3: verbose）
+tab2pdf --show-length score.tab  # 音価（三連符を含む）を表示
 ```
 
 ### Pythonコードでの使用
@@ -63,9 +68,9 @@ parser.render_score("output.pdf")
 - DS、Coda
 - ✅行末コメント対応
 - ✅三連符
-- 音価の表記
+- 音価の表記（--show-lengthオプションで制御可能）
 - 各種奏法（ハンマリング、プリング、スライド、チョーキング）
-- 改ページ
+- ✅改ページ
 - ✅VSCode extention(とりあえずpdfプレビューと簡単なシンタックスハイライトのみ)
 - HTML5+JS
 - pypi

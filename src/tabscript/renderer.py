@@ -466,17 +466,19 @@ class LayoutCalculator:
         return [y - (i * string_spacing) for i in range(string_count)]
 
 class Renderer:
-    def __init__(self, score: Score, debug_mode: bool = False, style_file=None):
+    def __init__(self, score: Score, debug_mode: bool = False, style_file=None, show_length: bool = False):
         """レンダラーを初期化
         
         Args:
             score: 描画対象のスコア
             debug_mode: デバッグモードフラグ
             style_file: スタイル設定ファイルのパス
+            show_length: 音価（三連符を含む）を表示するかどうか（デフォルトはFalse）
         """
         self.score = score
         self.debug_mode = debug_mode
         self.style_manager = StyleManager(style_file)
+        self.show_length = show_length
         
         # レンダラーを初期化
         self.bar_renderer = BarRenderer(self.style_manager)
@@ -562,11 +564,12 @@ class Renderer:
 
                 # 各小節の要素をチェック
                 for bar in column.bars:
-                    # 三連符のチェック
-                    for note in bar.notes:
-                        if hasattr(note, 'tuplet') and note.tuplet:
-                            has_triplet = True
-                            break
+                    # 三連符のチェック（音価表示が有効な場合のみ）
+                    if self.show_length:
+                        for note in bar.notes:
+                            if hasattr(note, 'tuplet') and note.tuplet:
+                                has_triplet = True
+                                break
                     
                     # コードのチェック（小節内の最初の音符を探す）
                     if bar.notes:
@@ -592,7 +595,7 @@ class Renderer:
                     chord_y = y  # コードの位置
                     y -= self.style_manager.get("chord_vertical_margin", 4 * mm)
 
-                if has_triplet:
+                if has_triplet and self.show_length:
                     triplet_y = y  # 三連符の位置
                     y -= self.style_manager.get("triplet_vertical_margin", 4 * mm)
 
@@ -633,10 +636,11 @@ class Renderer:
                                     note.chord
                                 )
 
-                    # 三連符記号を描画（下段）
-                    triplet_ranges = self.bar_renderer.triplet_renderer.detect_triplet_ranges(bar, note_positions, canvas_obj)
-                    if triplet_ranges:
-                        self.bar_renderer.triplet_renderer.draw_triplet_marks(canvas_obj, triplet_ranges, y_positions, triplet_y)
+                    # 三連符記号を描画（下段）- 音価表示が有効な場合のみ
+                    if self.show_length:
+                        triplet_ranges = self.bar_renderer.triplet_renderer.detect_triplet_ranges(bar, note_positions, canvas_obj)
+                        if triplet_ranges:
+                            self.bar_renderer.triplet_renderer.draw_triplet_marks(canvas_obj, triplet_ranges, y_positions, triplet_y)
 
                     # 小節と音符を描画
                     self.bar_renderer.render_bar(
