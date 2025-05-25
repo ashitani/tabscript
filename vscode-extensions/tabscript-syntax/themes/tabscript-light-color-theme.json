@@ -1,0 +1,59 @@
+{
+    "name": "TabScript Light",
+    "type": "light",
+    "colors": {
+        "editor.background": "#FFFFFF",
+        "editor.foreground": "#000000"
+    },
+    "tokenColors": [
+        {
+            "name": "Comments",
+            "scope": ["comment.line.number-sign.tabscript", "comment.line.double-slash.tabscript"],
+            "settings": {
+                "foreground": "#008000"
+            }
+        },
+        {
+            "name": "Metadata",
+            "scope": ["meta.metadata.tabscript"],
+            "settings": {
+                "foreground": "#0000FF"
+            }
+        },
+        {
+            "name": "Section",
+            "scope": ["meta.section.tabscript", "meta.triplet.tabscript"],
+            "settings": {
+                "foreground": "#795E26"
+            }
+        },
+        {
+            "name": "Chord Name",
+            "scope": ["tab.chord-name.tabscript"],
+            "settings": {
+                "foreground": "#795E26"
+            }
+        },
+        {
+            "name": "String Number",
+            "scope": ["tab.string-number.tabscript"],
+            "settings": {
+                "foreground": "#A31515"
+            }
+        },
+        {
+            "name": "Fret Number",
+            "scope": ["tab.fret-number.tabscript"],
+            "settings": {
+                "foreground": "#AF00DB"
+            }
+        },
+        {
+            "name": "Note Length",
+            "scope": ["tab.note-length.tabscript"],
+            "settings": {
+                "foreground": "#098658"
+            }
+        }
+    ]
+} 

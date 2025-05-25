@@ -18,9 +18,34 @@
             "comment": "Section lines"
         },
         {
+            "name": "meta.triplet.tabscript",
+            "match": "\\]3",
+            "comment": "Triplet notation"
+        },
+        {
             "name": "meta.metadata.tabscript",
-            "match": "^\\$(?!section\\s*=)[^=]+\\s*=\\s*.*$",
+            "match": "^\\$(?!section\\s*=)[^\\s]+(?:\\s*=\\s*.*)?$",
             "comment": "Metadata lines starting with $ (excluding section)"
+        },
+        {
+            "name": "tab.chord-name.tabscript",
+            "match": "@[^\\s]+",
+            "comment": "Chord name starting with @"
+        },
+        {
+            "name": "tab.string-number.tabscript",
+            "match": "\\b([1-6])-",
+            "comment": "String number (1-6)"
+        },
+        {
+            "name": "tab.fret-number.tabscript",
+            "match": "-([0-9]+)(?=:|$)",
+            "comment": "Fret number"
+        },
+        {
+            "name": "tab.note-length.tabscript",
+            "match": ":([0-9]+)|r([0-9]+)",
+            "comment": "Note length (both : and r notation)"
         }
     ]
 } 
