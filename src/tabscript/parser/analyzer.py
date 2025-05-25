@@ -49,6 +49,7 @@ class StructureAnalyzer:
         self.debug_level = debug_level
         self.current_line = 0
         self.current_volta_number = None  # n番カッコの番号を保持
+        self.section_bar_count = 0  # セクション内の小節数を追跡
     
     def debug_print(self, *args, level: int = 1, **kwargs):
         """デバッグ出力を行う"""
@@ -107,6 +108,11 @@ class StructureAnalyzer:
             parts = line[1:].split('=', 1)
             if self.debug_mode:
                 print(f"[DEBUG] _parse_metadata_line: line='{line}' parts={parts}")
+            
+            # $newpageコマンドの特別処理
+            if len(parts) == 1 and parts[0] == 'newpage':
+                return 'newpage', ''
+                
             if len(parts) != 2:
                 if self.debug_mode:
                     print(f"[DEBUG] Invalid metadata format: line='{line}' parts={parts}")
@@ -163,6 +169,7 @@ class StructureAnalyzer:
         current_section = None
         current_content = []
         current_bars_per_line = 4  # デフォルト値
+        self.section_bar_count = 0  # セクション内の小節数をリセット
         
         # 行ごとに処理
         for line in text.split('\n'):
@@ -183,11 +190,18 @@ class StructureAnalyzer:
                         current_content = []
                     # 新しいセクションを開始
                     current_section = {"name": value, "bars": [], "bars_per_line": current_bars_per_line}
+                    self.section_bar_count = 0  # セクション内の小節数をリセット
                 # bars_per_lineの更新
                 elif key == 'bars_per_line':
                     current_bars_per_line = int(value)
                     if current_section is not None:
                         current_section["bars_per_line"] = current_bars_per_line
+                # $newpageコマンドの処理
+                elif key == 'newpage':
+                    if current_section is not None:
+                        if "page_breaks" not in current_section:
+                            current_section["page_breaks"] = []
+                        current_section["page_breaks"].append(self.section_bar_count)
                 continue
                 
             # 通常の行（小節）の処理
@@ -197,6 +211,7 @@ class StructureAnalyzer:
             
             # 分割せず、そのままcurrent_contentに追加
             current_content.append(line)
+            self.section_bar_count += 1  # セクション内の小節数をインクリメント
         
         # 最後のセクションを保存
         if current_section is not None and current_content:

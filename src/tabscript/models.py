@@ -69,6 +69,7 @@ class Section:
         self._bars = []  # 内部用の属性
         self.is_default = name == ""  # 名前が空文字列の場合はデフォルトセクション
         self.bar_group_size = 4  # デフォルトの小節グループサイズ
+        self.page_breaks = []  # 改ページ位置のリスト
     
     def get_all_bars(self) -> List[Bar]:
         """全ての小節を取得"""

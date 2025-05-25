@@ -497,12 +497,17 @@ class Renderer:
         # セクションごとに描画
         for section in self.score.sections:
             self.debug_print(f"Processing section: {section.name}")
+            self.debug_print(f"Section attributes: {dir(section)}")
+            self.debug_print(f"Section page_breaks: {getattr(section, 'page_breaks', None)}")
             
             # 4. セクション名を描画（空のセクション名の場合はスキップ）
             if section.name:
                 canvas_obj.setFont("Helvetica-Bold", 12)
                 canvas_obj.drawString(self.margin, y, f"[{section.name}]")
                 y -= self.style_manager.get("section_name_margin_bottom")
+            
+            # 小節数を追跡
+            current_bar_count = 0
             
             # 各行を描画
             for i, column in enumerate(section.columns):
@@ -528,7 +533,7 @@ class Renderer:
                 # 三連符、コード、ボルタの有無をチェック
                 has_triplet = False  # 三連符の有無をチェック
                 has_chord = False    # コードの有無をチェック
-                has_volta = False    # ボルタの有無をチェック
+                has_volta = False
 
                 # 各小節の要素をチェック
                 for bar in column.bars:
@@ -571,7 +576,7 @@ class Renderer:
                 # 弦の位置を計算
                 y_positions = self.layout_calculator.calculate_string_positions(y)
 
-                # 小節を描画
+                # 小節と音符を描画
                 for j, bar in enumerate(column.bars):
                     # 小節の余白を計算
                     bar_margin = 1.5 * mm
@@ -612,12 +617,15 @@ class Renderer:
                     self.bar_renderer.render_bar(
                         canvas_obj, bar, bar_positions[j], base_y, bar_width, y_positions
                     )
+                    current_bar_count += 1  # 小節数をインクリメント
                 
                 # 7. 最高弦の下端から下に移動
                 y = y_positions[-1] - self.style_manager.get("string_bottom_margin")
                 
-                # 新しいページが必要かチェック
-                if y < self.margin_bottom:
+                # カラム描画後に改ページ判定（小節数ベース）
+                if hasattr(section, 'page_breaks') and current_bar_count in section.page_breaks:
+                    self.debug_print(f"Section: {section.name}, Current bar count: {current_bar_count}, page_breaks: {section.page_breaks}")
+                    self.debug_print(f"Should break page: {current_bar_count in section.page_breaks}")
                     canvas_obj.showPage()
                     # 新しいページでは必ず上端から描画を始める
                     y = self.page_height - self.margin

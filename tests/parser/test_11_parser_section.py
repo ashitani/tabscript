@@ -213,4 +213,35 @@ def test_empty_default_section():
     # 1つのセクションのみ存在すること
     assert len(sections) == 1
     assert sections[0]["name"] == "Verse"
-    assert len(sections[0]["bars"]) == 1 
+    assert len(sections[0]["bars"]) == 1
+
+def test_parse_with_newpage():
+    """$newpageコマンドによる改ページ情報が正しく解析されることをテスト"""
+    analyzer = StructureAnalyzer(debug_mode=True)
+    text = '''$title="Test"
+$tuning="guitar"
+$beat="4/4"
+
+$section="Intro"
+1-0:4 2-2:4 3-4:4 4-5:4
+1-0:4 2-2:4 3-4:4 4-5:4
+
+$newpage
+
+$section="Main"
+1-0:4 2-2:4 3-4:4 4-5:4
+1-0:4 2-2:4 3-4:4 4-5:4'''
+    metadata, sections = analyzer.analyze(text)
+    # メタデータが正しく取得できていること
+    assert metadata["title"] == "Test"
+    assert metadata["tuning"] == "guitar"
+    assert metadata["beat"] == "4/4"
+    # セクションが2つ
+    assert len(sections) == 2
+    # 各セクションの小節数
+    assert len(sections[0]["bars"]) == 2
+    assert len(sections[1]["bars"]) == 2
+    # 改ページ情報が正しく格納されていること
+    assert "page_breaks" in sections[0]  # Introセクションにpage_breaksがある
+    assert sections[0]["page_breaks"] == [2]  # Introセクションの2小節目の後で改ページ
+    assert "page_breaks" not in sections[1]  # Mainセクションにはpage_breaksがない 

@@ -64,6 +64,9 @@ class ScoreBuilder:
                 self.debug_print(f"Section {section_name} using bars_per_line: {section_bars_per_line}")
                 
                 section = Section(section_name)
+                # page_breaks情報を引き継ぐ
+                if 'page_breaks' in section_info:
+                    section.page_breaks = section_info['page_breaks']
                 score.sections.append(section)
                 
                 # 小節の作成
@@ -87,6 +90,9 @@ class ScoreBuilder:
                 self.debug_print(f"Section {section_name} using bars_per_line: {section_bars_per_line}")
                 
                 section = Section(section_name)
+                # page_breaks情報を引き継ぐ
+                if 'page_breaks' in bar_infos:
+                    section.page_breaks = bar_infos['page_breaks']
                 score.sections.append(section)
                 
                 # 小節の作成
