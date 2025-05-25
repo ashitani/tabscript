@@ -627,8 +627,8 @@ class Renderer:
                     self.debug_print(f"Section: {section.name}, Current bar count: {current_bar_count}, page_breaks: {section.page_breaks}")
                     self.debug_print(f"Should break page: {current_bar_count in section.page_breaks}")
                     canvas_obj.showPage()
-                    # 新しいページでは必ず上端から描画を始める
-                    y = self.page_height - self.margin
+                    # 新しいページでは最小限の余白から描画を始める
+                    y = self.page_height - (self.margin - self.style_manager.get("section_name_margin_bottom"))
                     # 三連符、コード、ボルタの位置も上端に合わせる
                     triplet_y = y
                     chord_y = y
