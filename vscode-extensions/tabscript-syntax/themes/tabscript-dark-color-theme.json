@@ -24,7 +24,15 @@
             "name": "Section",
             "scope": ["meta.section.tabscript", "meta.triplet.tabscript"],
             "settings": {
-                "foreground": "#DCDCAA"
+                "foreground": "#FF00FF",
+                "fontStyle": "bold"
+            }
+        },
+        {
+            "name": "Section Background",
+            "scope": ["meta.section.tabscript"],
+            "settings": {
+                "background": "#2D2D2D"
             }
         },
         {
