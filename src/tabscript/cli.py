@@ -28,6 +28,8 @@ def main():
                         help='Debug level (1: basic, 2: detailed, 3: verbose)')
     parser.add_argument('--show-length', action='store_true',
                         help='Show note lengths and tuplets (default: False)')
+    parser.add_argument('--format', choices=['pdf', 'png', 'txt'], default='pdf',
+                        help='Output format (default: pdf)')
     args = parser.parse_args()
     
     # 出力形式の判断
@@ -35,23 +37,23 @@ def main():
     extension = '.pdf' if is_pdf else '.txt'
     
     # パーサーの初期化
-    tab_parser = Parser(debug_mode=args.debug, debug_level=args.debug_level)  # デバッグレベルを設定
+    tab_parser = Parser(debug_mode=args.debug, debug_level=args.debug_level)
     
     # 各ファイルを処理
     for input_file in args.files:
         try:
             # 出力ファイル名を生成
-            output_file = input_file.rsplit('.', 1)[0] + extension
+            output_file = input_file.rsplit('.', 1)[0] + (f'.{args.format}' if args.format else extension)
             
             # パースして出力
             score = tab_parser.parse(input_file)
             
             # レンダラーの初期化とレンダリング
-            if is_pdf:
+            if args.format in ['pdf', 'png']:
                 renderer = Renderer(score, debug_mode=args.debug, show_length=args.show_length)
-                renderer.render_pdf(output_file)
+                renderer.render_score(output_file)
             else:
-                # テキスト出力の場合の処理（未実装）
+                # テキスト出力の場合の処理
                 with open(output_file, 'w') as f:
                     f.write(str(score))
             

@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A simple text-based guitar tablature format"
 authors = [
     {name = "Tatsuji Ashitani", email = "tatsuji@ashitani.jp"},
+    
 ]
 readme = "README.md"
 requires-python = ">=3.7"
@@ -27,12 +28,14 @@ urls = {Homepage = "https://github.com/yourusername/tabscript"}
 dev = [
     "pytest>=7.0.0",
     "black>=22.1.0",
+    "pdf2image>=1.16.3",
 ]
 
 [project.scripts]
 tabscript = "tabscript.cli:main"
 tab2pdf = "tabscript.cli:main"
 tab2txt = "tabscript.cli:main"
+tab2html = "tabscript.cli_html:main" 
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -41,4 +44,13 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-tabscript = ["*.ttf", "*.json"] 
+tabscript = ["*.ttf", "*.json"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+reportlab = "^4.0.0"
+pdf2image = "^1.16.3"
+
+[tool.poetry.scripts]
+tab2pdf = "tabscript.cli:main"
+tab2html = "tabscript.cli_html:main" 

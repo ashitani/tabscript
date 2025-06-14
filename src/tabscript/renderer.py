@@ -7,6 +7,8 @@ from .models import Score, Section, Bar, Note
 from .exceptions import TabScriptError
 from typing import List, Tuple, Dict
 from .style import StyleManager
+from pdf2image import convert_from_path
+import os
 
 class NoteRenderer:
     """音符の描画を担当するクラス"""
@@ -438,7 +440,8 @@ class LayoutCalculator:
         bar_group_size = bars_per_line
         num_groups = 1  # 1行ごとに1グループとみなす
         bar_group_margin = self.style_manager.get("bar_group_margin")
-        available_width = page_width - (bar_group_margin * (num_groups - 1))
+        margin = self.style_manager.get("margin", 10 * mm)  # デフォルト値として10mmを設定
+        available_width = page_width - (2 * margin) - (bar_group_margin * (num_groups - 1))
         bar_width = available_width / bar_group_size
         bar_group_width = bar_width * bar_group_size
         return bar_width, bar_group_width, bar_group_margin
@@ -477,19 +480,25 @@ class Renderer:
         """
         self.score = score
         self.debug_mode = debug_mode
-        self.style_manager = StyleManager(style_file)
         self.show_length = show_length
+        
+        # レイアウト設定
+        self.page_width = 210 * mm
+        self.page_height = 297 * mm
+        self.margin = 10 * mm
+        self.margin_bottom = 20 * mm
+        
+        # スタイルマネージャーを初期化
+        self.style_manager = StyleManager(style_file)
+        
+        # スタイルマネージャーにマージンを設定
+        self.style_manager.set("margin", self.margin)
+        self.style_manager.set("margin_bottom", self.margin_bottom)
         
         # レンダラーを初期化
         self.bar_renderer = BarRenderer(self.style_manager)
         self.layout_calculator = LayoutCalculator(self.style_manager)
         
-        # レイアウト設定
-        self.page_width = 210 * mm
-        self.page_height = 297 * mm
-        self.margin = 20 * mm
-        self.margin_bottom = 20 * mm
-
     def debug_print(self, *args, **kwargs):
         """デバッグモードの時だけ出力"""
         if self.debug_mode:
@@ -510,8 +519,12 @@ class Renderer:
         # 現在のページ番号を初期化
         current_page = 1
         
+        # マージンを取得
+        margin = self.style_manager.get("margin", 10 * mm)
+        margin_bottom = self.style_manager.get("margin_bottom", 20 * mm)
+        
         # 1. タイトルを描画
-        y = self.page_height - self.margin
+        y = self.page_height - margin
         self._draw_title(canvas_obj, y)
         
         # 2. タイトルの下に移動
@@ -530,7 +543,7 @@ class Renderer:
             # 4. セクション名を描画（空のセクション名の場合はスキップ）
             if section.name:
                 canvas_obj.setFont("Helvetica-Bold", 12)
-                canvas_obj.drawString(self.margin, y, f"[{section.name}]")
+                canvas_obj.drawString(margin, y, f"[{section.name}]")
                 y -= self.style_manager.get("section_name_margin_bottom")
             
             # 小節数を追跡
@@ -550,11 +563,11 @@ class Renderer:
 
                 # レイアウトを計算
                 bar_width, bar_group_width, bar_group_margin = self.layout_calculator.calculate_section_layout(
-                    bars_per_line, self.page_width - (2 * self.margin)
+                    bars_per_line, self.page_width - (2 * margin)
                 )
                 self.debug_print(f"Section: {section.name}, Column: {i}, Bar width: {bar_width}, Bar group width: {bar_group_width}")
                 bar_positions = self.layout_calculator.calculate_bar_positions(
-                    bars_per_line, self.margin, bar_width, bar_group_width, bar_group_margin
+                    bars_per_line, margin, bar_width, bar_group_width, bar_group_margin
                 )
 
                 # 三連符、コード、ボルタの有無をチェック
@@ -660,7 +673,7 @@ class Renderer:
                     canvas_obj.showPage()
                     current_page += 1
                     # 新しいページでは最小限の余白から描画を始める
-                    y = self.page_height - (self.margin - self.style_manager.get("section_name_margin_bottom"))
+                    y = self.page_height - (margin - self.style_manager.get("section_name_margin_bottom"))
                     # 三連符、コード、ボルタの位置も上端に合わせる
                     triplet_y = y
                     chord_y = y
@@ -673,13 +686,13 @@ class Renderer:
             y -= self.style_manager.get("section_spacing")
             
             # 新しいページが必要かチェック（最後のセクションでない場合のみ）
-            if y < self.margin_bottom and section_index < len(self.score.sections) - 1:
+            if y < margin_bottom and section_index < len(self.score.sections) - 1:
                 # 現在のページのページ番号を描画
                 self._draw_page_number(canvas_obj, current_page)
                 canvas_obj.showPage()
                 current_page += 1
                 # 新しいページでは必ず上端から描画を始める
-                y = self.page_height - self.margin
+                y = self.page_height - margin
         
         # 最後のページのページ番号を描画
         self._draw_page_number(canvas_obj, current_page)
@@ -784,6 +797,29 @@ class Renderer:
                 f.write(bar_lines[string])
             f.write("\n")
 
+    def render_png(self, output_path: str, dpi: int = 200):
+        """タブ譜をPNGとしてレンダリング
+        
+        Args:
+            output_path: 出力ファイルのパス
+            dpi: 画像の解像度（デフォルト: 200）
+        """
+        # 一時的なPDFファイルを作成
+        temp_pdf = output_path.replace('.png', '_temp.pdf')
+        self.render_pdf(temp_pdf)
+        
+        try:
+            # PDFをPNGに変換
+            images = convert_from_path(temp_pdf, dpi=dpi)
+            
+            # 最初のページを保存
+            if images:
+                images[0].save(output_path, 'PNG')
+        finally:
+            # 一時ファイルを削除
+            if os.path.exists(temp_pdf):
+                os.remove(temp_pdf)
+
     def render_score(self, output_path: str):
         """タブ譜をファイルとして出力"""
         if not self.score:
@@ -791,6 +827,8 @@ class Renderer:
         
         if output_path.endswith('.pdf'):
             self.render_pdf(output_path)
+        elif output_path.endswith('.png'):
+            self.render_png(output_path)
         else:
             self.render_text(output_path)
 
